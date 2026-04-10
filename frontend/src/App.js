@@ -365,10 +365,14 @@ function WeeklyTranscription() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
+    let accumulated = '';
     rec.onresult = e => {
-      let t = '';
-      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
-      setText(t.trim());
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
+        else interim = e.results[i][0].transcript;
+      }
+      setText((accumulated + interim).trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -535,10 +539,14 @@ function GeneralTranscriptionPage() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
+    let accumulated = '';
     rec.onresult = e => {
-      let t = '';
-      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
-      setText(t.trim());
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
+        else interim = e.results[i][0].transcript;
+      }
+      setText((accumulated + interim).trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -1315,10 +1323,14 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
+    let accumulated = '';
     rec.onresult = e => {
-      let txt = '';
-      for (let i = 0; i < e.results.length; i++) txt += e.results[i][0].transcript + ' ';
-      setNoteText(txt.trim());
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
+        else interim = e.results[i][0].transcript;
+      }
+      setNoteText((accumulated + interim).trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -2633,7 +2645,7 @@ function LoginPage({ onLogin }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
