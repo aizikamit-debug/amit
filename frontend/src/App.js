@@ -360,32 +360,30 @@ function WeeklyTranscription() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const startRec = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const mr = new MediaRecorder(stream, { mimeType });
-      const chunks = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64 = reader.result.split(',')[1];
-          try {
-            const r = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/transcribe`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ audio: base64, mimeType })
-            });
-            const d = await r.json();
-            if (d.text) setText(prev => prev ? prev + ' ' + d.text : d.text);
-          } catch (e) { alert('שגיאה בתמלול'); }
-        };
-        reader.readAsDataURL(blob);
-      };
-      mr.start(); setRecognition(mr); setIsRecording(true);
-    } catch (e) { alert('אין גישה למיקרופון'); }
+  const startRec = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
+    const rec = new SR();
+    rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+    let sessionPhrases = [];
+    rec.onstart = () => { sessionPhrases = []; };
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        if (!t) continue;
+        const combined = sessionPhrases.join(' ');
+        // Android Chrome ghost event: new text starts with everything we already have
+        if (combined && (t === combined || t.startsWith(combined))) continue;
+        // Exact duplicate guard
+        if (sessionPhrases.includes(t)) continue;
+        sessionPhrases.push(t);
+        setText(prev => prev ? prev + ' ' + t : t);
+      }
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    rec.start(); setRecognition(rec); setIsRecording(true);
   };
 
   const stopRec = () => {
@@ -545,32 +543,30 @@ function GeneralTranscriptionPage() {
     else setSelectedIds(new Set(filtered.map(p => p.id)));
   };
 
-  const startRec = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const mr = new MediaRecorder(stream, { mimeType });
-      const chunks = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64 = reader.result.split(',')[1];
-          try {
-            const r = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/transcribe`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ audio: base64, mimeType })
-            });
-            const d = await r.json();
-            if (d.text) setText(prev => prev ? prev + ' ' + d.text : d.text);
-          } catch (e) { alert('שגיאה בתמלול'); }
-        };
-        reader.readAsDataURL(blob);
-      };
-      mr.start(); setRecognition(mr); setIsRecording(true);
-    } catch (e) { alert('אין גישה למיקרופון'); }
+  const startRec = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
+    const rec = new SR();
+    rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+    let sessionPhrases = [];
+    rec.onstart = () => { sessionPhrases = []; };
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        if (!t) continue;
+        const combined = sessionPhrases.join(' ');
+        // Android Chrome ghost event: new text starts with everything we already have
+        if (combined && (t === combined || t.startsWith(combined))) continue;
+        // Exact duplicate guard
+        if (sessionPhrases.includes(t)) continue;
+        sessionPhrases.push(t);
+        setText(prev => prev ? prev + ' ' + t : t);
+      }
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    rec.start(); setRecognition(rec); setIsRecording(true);
   };
 
   const stopRec = () => {
@@ -1340,32 +1336,28 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     if (tab === 'billing') billingAPI.getPatient(patientId).then(r => setBilling(r.data)).catch(() => {});
   }, [tab, patientId]);
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const mr = new MediaRecorder(stream, { mimeType });
-      const chunks = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(chunks, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64 = reader.result.split(',')[1];
-          try {
-            const r = await fetch(`${process.env.REACT_APP_API_URL || '/api'}/transcribe`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ audio: base64, mimeType })
-            });
-            const d = await r.json();
-            if (d.text) setNoteText(prev => prev ? prev + ' ' + d.text : d.text);
-          } catch (e) { alert('שגיאה בתמלול'); }
-        };
-        reader.readAsDataURL(blob);
-      };
-      mr.start(); setRecognition(mr); setIsRecording(true);
-    } catch (e) { alert('אין גישה למיקרופון'); }
+  const startRecording = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
+    const rec = new SR();
+    rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+    let sessionPhrases = [];
+    rec.onstart = () => { sessionPhrases = []; };
+    rec.onresult = e => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        if (!t) continue;
+        const combined = sessionPhrases.join(' ');
+        if (combined && (t === combined || t.startsWith(combined))) continue;
+        if (sessionPhrases.includes(t)) continue;
+        sessionPhrases.push(t);
+        setNoteText(prev => prev ? prev + ' ' + t : t);
+      }
+    };
+    rec.onend = () => setIsRecording(false);
+    rec.onerror = () => setIsRecording(false);
+    rec.start(); setRecognition(rec); setIsRecording(true);
   };
 
   const stopRecording = () => {
