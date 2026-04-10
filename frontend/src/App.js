@@ -363,20 +363,23 @@ function WeeklyTranscription() {
   const startRec = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    let lastText = ''; let lastTime = 0;
-    rec.onresult = e => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
-        const t = e.results[i][0].transcript.trim();
-        const now = Date.now();
-        if (!t || (t === lastText && now - lastTime < 3000)) continue;
-        lastText = t; lastTime = now;
-        setText(prev => (prev ? prev + ' ' : '') + t);
-      }
+    let baseText = ''; let active = true; let currentRec = null;
+    const launch = () => {
+      if (!active) return;
+      const rec = new SR(); currentRec = rec;
+      rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+      rec.onresult = e => {
+        const last = e.results[e.results.length - 1];
+        if (last && last.isFinal) {
+          const t = last[0].transcript.trim();
+          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setText(baseText); }
+        }
+      };
+      rec.onend = () => { if (active) launch(); };
+      rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
+      try { rec.start(); } catch(e) {}
     };
-    rec.start(); setRecognition(rec); setIsRecording(true);
+    launch(); setRecognition({ stop: () => { active = false; try { currentRec?.stop(); } catch(e) {} } }); setIsRecording(true);
   };
 
   const stopRec = () => {
@@ -539,20 +542,23 @@ function GeneralTranscriptionPage() {
   const startRec = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    let lastText = ''; let lastTime = 0;
-    rec.onresult = e => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
-        const t = e.results[i][0].transcript.trim();
-        const now = Date.now();
-        if (!t || (t === lastText && now - lastTime < 3000)) continue;
-        lastText = t; lastTime = now;
-        setText(prev => (prev ? prev + ' ' : '') + t);
-      }
+    let baseText = ''; let active = true; let currentRec = null;
+    const launch = () => {
+      if (!active) return;
+      const rec = new SR(); currentRec = rec;
+      rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+      rec.onresult = e => {
+        const last = e.results[e.results.length - 1];
+        if (last && last.isFinal) {
+          const t = last[0].transcript.trim();
+          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setText(baseText); }
+        }
+      };
+      rec.onend = () => { if (active) launch(); };
+      rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
+      try { rec.start(); } catch(e) {}
     };
-    rec.start(); setRecognition(rec); setIsRecording(true);
+    launch(); setRecognition({ stop: () => { active = false; try { currentRec?.stop(); } catch(e) {} } }); setIsRecording(true);
   };
 
   const stopRec = () => {
@@ -1325,20 +1331,23 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const startRecording = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    let lastText = ''; let lastTime = 0;
-    rec.onresult = e => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
-        const t = e.results[i][0].transcript.trim();
-        const now = Date.now();
-        if (!t || (t === lastText && now - lastTime < 3000)) continue;
-        lastText = t; lastTime = now;
-        setNoteText(prev => (prev ? prev + ' ' : '') + t);
-      }
+    let baseText = ''; let active = true; let currentRec = null;
+    const launch = () => {
+      if (!active) return;
+      const rec = new SR(); currentRec = rec;
+      rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
+      rec.onresult = e => {
+        const last = e.results[e.results.length - 1];
+        if (last && last.isFinal) {
+          const t = last[0].transcript.trim();
+          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setNoteText(baseText); }
+        }
+      };
+      rec.onend = () => { if (active) launch(); };
+      rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
+      try { rec.start(); } catch(e) {}
     };
-    rec.start(); setRecognition(rec); setIsRecording(true);
+    launch(); setRecognition({ stop: () => { active = false; try { currentRec?.stop(); } catch(e) {} } }); setIsRecording(true);
   };
 
   const stopRecording = () => {
