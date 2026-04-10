@@ -365,11 +365,12 @@ function WeeklyTranscription() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
-    rec.onresult = e => {
-      const t = e.results[0][0].transcript.trim();
-      if (t) setText(prev => prev ? prev + ' ' + t : t);
+    let lastResult = '';
+    rec.onresult = e => { lastResult = e.results[0][0].transcript.trim(); };
+    rec.onend = () => {
+      if (lastResult) setText(prev => prev ? prev + ' ' + lastResult : lastResult);
+      setIsRecording(false);
     };
-    rec.onend = () => setIsRecording(false);
     rec.onerror = () => setIsRecording(false);
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -536,11 +537,12 @@ function GeneralTranscriptionPage() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
-    rec.onresult = e => {
-      const t = e.results[0][0].transcript.trim();
-      if (t) setText(prev => prev ? prev + ' ' + t : t);
+    let lastResult = '';
+    rec.onresult = e => { lastResult = e.results[0][0].transcript.trim(); };
+    rec.onend = () => {
+      if (lastResult) setText(prev => prev ? prev + ' ' + lastResult : lastResult);
+      setIsRecording(false);
     };
-    rec.onend = () => setIsRecording(false);
     rec.onerror = () => setIsRecording(false);
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -1317,11 +1319,12 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
-    rec.onresult = e => {
-      const t = e.results[0][0].transcript.trim();
-      if (t) setNoteText(prev => prev ? prev + ' ' + t : t);
+    let lastResult = '';
+    rec.onresult = e => { lastResult = e.results[0][0].transcript.trim(); };
+    rec.onend = () => {
+      if (lastResult) setNoteText(prev => prev ? prev + ' ' + lastResult : lastResult);
+      setIsRecording(false);
     };
-    rec.onend = () => setIsRecording(false);
     rec.onerror = () => setIsRecording(false);
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
