@@ -364,15 +364,17 @@ function WeeklyTranscription() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
-    let accumulated = '';
+    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
+    const seen = new Set();
     rec.onresult = e => {
-      let interim = '';
+      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
-        else interim = e.results[i][0].transcript;
+        if (e.results[i].isFinal && !seen.has(i)) {
+          seen.add(i);
+          newText += e.results[i][0].transcript + ' ';
+        }
       }
-      setText((accumulated + interim).trim());
+      if (newText) setText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -538,15 +540,17 @@ function GeneralTranscriptionPage() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
-    let accumulated = '';
+    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
+    const seen = new Set();
     rec.onresult = e => {
-      let interim = '';
+      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
-        else interim = e.results[i][0].transcript;
+        if (e.results[i].isFinal && !seen.has(i)) {
+          seen.add(i);
+          newText += e.results[i][0].transcript + ' ';
+        }
       }
-      setText((accumulated + interim).trim());
+      if (newText) setText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -1322,15 +1326,17 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
-    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = true;
-    let accumulated = '';
+    rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
+    const seen = new Set();
     rec.onresult = e => {
-      let interim = '';
+      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) accumulated += e.results[i][0].transcript + ' ';
-        else interim = e.results[i][0].transcript;
+        if (e.results[i].isFinal && !seen.has(i)) {
+          seen.add(i);
+          newText += e.results[i][0].transcript + ' ';
+        }
       }
-      setNoteText((accumulated + interim).trim());
+      if (newText) setNoteText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
