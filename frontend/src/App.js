@@ -365,16 +365,16 @@ function WeeklyTranscription() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    const seen = new Set();
+    let lastText = ''; let lastTime = 0;
     rec.onresult = e => {
-      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal && !seen.has(i)) {
-          seen.add(i);
-          newText += e.results[i][0].transcript + ' ';
-        }
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        const now = Date.now();
+        if (!t || (t === lastText && now - lastTime < 3000)) continue;
+        lastText = t; lastTime = now;
+        setText(prev => (prev ? prev + ' ' : '') + t);
       }
-      if (newText) setText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -541,16 +541,16 @@ function GeneralTranscriptionPage() {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    const seen = new Set();
+    let lastText = ''; let lastTime = 0;
     rec.onresult = e => {
-      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal && !seen.has(i)) {
-          seen.add(i);
-          newText += e.results[i][0].transcript + ' ';
-        }
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        const now = Date.now();
+        if (!t || (t === lastText && now - lastTime < 3000)) continue;
+        lastText = t; lastTime = now;
+        setText(prev => (prev ? prev + ' ' : '') + t);
       }
-      if (newText) setText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
@@ -1327,16 +1327,16 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
     const rec = new SR();
     rec.lang = 'he-IL'; rec.continuous = true; rec.interimResults = false;
-    const seen = new Set();
+    let lastText = ''; let lastTime = 0;
     rec.onresult = e => {
-      let newText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal && !seen.has(i)) {
-          seen.add(i);
-          newText += e.results[i][0].transcript + ' ';
-        }
+        if (!e.results[i].isFinal) continue;
+        const t = e.results[i][0].transcript.trim();
+        const now = Date.now();
+        if (!t || (t === lastText && now - lastTime < 3000)) continue;
+        lastText = t; lastTime = now;
+        setNoteText(prev => (prev ? prev + ' ' : '') + t);
       }
-      if (newText) setNoteText(prev => (prev ? prev + ' ' : '') + newText.trim());
     };
     rec.start(); setRecognition(rec); setIsRecording(true);
   };
