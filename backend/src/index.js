@@ -54,6 +54,7 @@ app.use('/api/billing', require('./routes/billing'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/calendar', require('./routes/calendar'));
+app.use('/api/transcribe', require('./routes/transcribe'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
