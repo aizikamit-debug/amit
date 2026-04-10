@@ -363,19 +363,23 @@ function WeeklyTranscription() {
   const startRec = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    let baseText = ''; let active = true; let currentRec = null;
+    let baseText = ''; let sessionText = ''; let active = true; let currentRec = null;
     const launch = () => {
       if (!active) return;
+      sessionText = '';
       const rec = new SR(); currentRec = rec;
       rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
       rec.onresult = e => {
         const last = e.results[e.results.length - 1];
         if (last && last.isFinal) {
-          const t = last[0].transcript.trim();
-          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setText(baseText); }
+          sessionText = last[0].transcript.trim();
+          setText((baseText ? baseText + ' ' : '') + sessionText);
         }
       };
-      rec.onend = () => { if (active) launch(); };
+      rec.onend = () => {
+        if (sessionText) { baseText = (baseText ? baseText + ' ' : '') + sessionText; sessionText = ''; }
+        if (active) launch();
+      };
       rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
       try { rec.start(); } catch(e) {}
     };
@@ -542,19 +546,23 @@ function GeneralTranscriptionPage() {
   const startRec = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    let baseText = ''; let active = true; let currentRec = null;
+    let baseText = ''; let sessionText = ''; let active = true; let currentRec = null;
     const launch = () => {
       if (!active) return;
+      sessionText = '';
       const rec = new SR(); currentRec = rec;
       rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
       rec.onresult = e => {
         const last = e.results[e.results.length - 1];
         if (last && last.isFinal) {
-          const t = last[0].transcript.trim();
-          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setText(baseText); }
+          sessionText = last[0].transcript.trim();
+          setText((baseText ? baseText + ' ' : '') + sessionText);
         }
       };
-      rec.onend = () => { if (active) launch(); };
+      rec.onend = () => {
+        if (sessionText) { baseText = (baseText ? baseText + ' ' : '') + sessionText; sessionText = ''; }
+        if (active) launch();
+      };
       rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
       try { rec.start(); } catch(e) {}
     };
@@ -1331,19 +1339,23 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const startRecording = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('הדפדפן לא תומך בהקלטה'); return; }
-    let baseText = ''; let active = true; let currentRec = null;
+    let baseText = ''; let sessionText = ''; let active = true; let currentRec = null;
     const launch = () => {
       if (!active) return;
+      sessionText = '';
       const rec = new SR(); currentRec = rec;
       rec.lang = 'he-IL'; rec.continuous = false; rec.interimResults = false;
       rec.onresult = e => {
         const last = e.results[e.results.length - 1];
         if (last && last.isFinal) {
-          const t = last[0].transcript.trim();
-          if (t) { baseText = (baseText ? baseText + ' ' : '') + t; setNoteText(baseText); }
+          sessionText = last[0].transcript.trim();
+          setNoteText((baseText ? baseText + ' ' : '') + sessionText);
         }
       };
-      rec.onend = () => { if (active) launch(); };
+      rec.onend = () => {
+        if (sessionText) { baseText = (baseText ? baseText + ' ' : '') + sessionText; sessionText = ''; }
+        if (active) launch();
+      };
       rec.onerror = ev => { if (ev.error !== 'no-speech' && ev.error !== 'aborted') active = false; if (active) launch(); };
       try { rec.start(); } catch(e) {}
     };
