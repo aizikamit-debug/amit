@@ -356,6 +356,7 @@ function WeeklyTranscription() {
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [previews, setPreviews] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -370,6 +371,7 @@ function WeeklyTranscription() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         if (chunks.length === 0) return;
+        setTranscribing(true);
         const blob = new Blob(chunks, { type: mimeType });
         const reader = new FileReader();
         reader.onloadend = async () => {
@@ -380,9 +382,14 @@ function WeeklyTranscription() {
               body: JSON.stringify({ audio: base64, mimeType })
             });
             const d = await r.json();
-            if (d.text) setText(prev => prev ? prev + ' ' + d.text : d.text);
-            else if (d.message) alert(d.message);
-          } catch(e) { alert('שגיאה בתמלול'); }
+            setTranscribing(false);
+            if (d.text) {
+              const newText = text ? text + ' ' + d.text : d.text;
+              setText(newText);
+              // Auto-process: identify patients by calendar order
+              processTranscription(newText);
+            } else if (d.message) alert(d.message);
+          } catch(e) { setTranscribing(false); alert('שגיאה בתמלול'); }
         };
         reader.readAsDataURL(blob);
       };
@@ -398,15 +405,17 @@ function WeeklyTranscription() {
 
   const [mode, setMode] = useState(null); // 'process' | 'raw'
 
-  const doProcess = async () => {
-    if (!text.trim()) return;
+  const processTranscription = async (txt) => {
+    if (!txt?.trim()) return;
     setProcessing(true); setPreviews(null); setMode('process');
     try {
-      const r = await notesAPI.parseWeekly(text);
+      const r = await notesAPI.parseWeekly(txt);
       setPreviews(r.data.previews);
     } catch (e) { alert('שגיאה בעיבוד AI'); setMode(null); }
     setProcessing(false);
   };
+
+  const doProcess = async () => processTranscription(text);
 
   const doSplit = async () => {
     if (!text.trim()) return;
@@ -440,11 +449,18 @@ function WeeklyTranscription() {
       {!previews ? (
         <>
           <div style={{ display: 'flex', gap: 7, marginBottom: 10 }}>
-            <button className={`btn btn-xs ${isRecording ? 'btn-danger' : 'btn-ghost'}`} onClick={isRecording ? stopRec : startRec}>
-              {Icon.mic(13)} {isRecording ? 'עצור' : 'הקלט'}
+            <button
+              className={`btn btn-xs ${isRecording ? 'btn-danger' : 'btn-ghost'}`}
+              onClick={isRecording ? stopRec : startRec}
+              disabled={transcribing || processing}
+            >
+              {Icon.mic(13)} {isRecording ? 'עצור הקלטה' : 'הקלט'}
             </button>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', alignSelf: 'center' }}>
-              {isRecording ? '🔴 מקליט...' : 'או הדבק טקסט ידנית'}
+              {isRecording ? '🔴 מקליט...'
+                : transcribing ? '⏳ ממלל...'
+                : processing ? '🤖 מזהה מטופלים לפי יומן...'
+                : 'או הדבק טקסט ידנית'}
             </span>
           </div>
           <textarea
@@ -482,7 +498,7 @@ function WeeklyTranscription() {
       ) : (
         <>
           <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>
-            {mode === 'raw' ? '📂 תצוגה מקדימה — טקסט גולמי לפי מטופל' : '🤖 תצוגה מקדימה — תיעוד מעובד ע"י AI'}
+            {mode === 'raw' ? '📂 תצוגה מקדימה — טקסט גולמי לפי מטופל' : '🗓 תיעוד מעובד לפי סדר פגישות השבוע'}
           </div>
           <div style={{ marginBottom: 12 }}>
             {previews.length === 0
@@ -493,11 +509,25 @@ function WeeklyTranscription() {
                 background: p.matched ? 'var(--page-bg)' : '#fff1f2',
                 border: `1px solid ${p.matched ? 'var(--border)' : '#fecaca'}`
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13.5 }}>{p.patient_name}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
+                  <div>
+                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.patient_name}</span>
+                    {p.day_name && (
+                      <span style={{
+                        marginRight: 8, fontSize: 11, color: 'var(--primary)',
+                        background: 'var(--primary-light, #ede9fe)', borderRadius: 6,
+                        padding: '1px 7px', fontWeight: 500
+                      }}>
+                        יום {p.day_name}
+                        {p.session_time ? ` · ${p.session_time.slice(0,5)}` : ''}
+                      </span>
+                    )}
+                  </div>
                   {!p.matched
                     ? <span style={{ fontSize: 11, color: 'var(--danger)' }}>לא זוהה</span>
-                    : <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ זוהה</span>
+                    : p.day_name
+                      ? <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ פגישה השבוע</span>
+                      : <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ זוהה</span>
                   }
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{p.content}</div>
