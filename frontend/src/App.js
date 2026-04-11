@@ -421,7 +421,7 @@ function WeeklyTranscription() {
     if (!txt?.trim()) return;
     setProcessing(true); setPreviews(null); setMode('raw');
     try {
-      const r = await notesAPI.parseWeekly(txt); // use calendar-aware parse always
+      const r = await notesAPI.splitWeekly(txt); // split by name only, no AI
       setPreviews(r.data.previews);
     } catch (e) { alert('שגיאה בארגון'); setMode(null); }
     setProcessing(false);
