@@ -1448,6 +1448,23 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     } catch (e) { alert('שגיאה במחיקה'); }
   };
 
+  const [editingNote, setEditingNote] = useState(null); // { id, text }
+
+  const startEditNote = (n) => {
+    setEditingNote({ id: n.id, text: n.processed_text || n.content || '' });
+  };
+
+  const saveEditNote = async () => {
+    if (!editingNote) return;
+    try {
+      await notesAPI.update(editingNote.id, { raw_text: editingNote.text, processed_text: editingNote.text });
+      setNotes(prev => prev.map(n => n.id === editingNote.id
+        ? { ...n, content: editingNote.text, processed_text: editingNote.text }
+        : n));
+      setEditingNote(null);
+    } catch (e) { alert('שגיאה בשמירה'); }
+  };
+
   const addSession = async () => {
     try {
       await sessionsAPI.create(patientId, { ...sessionForm, fee: sessionForm.fee || patient?.session_fee });
@@ -1848,43 +1865,76 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
           )}
           {notes.length === 0 && !showNoteForm
             ? <EmptyState icon={Icon.notes(22)} title="אין תיעוד" sub="הוסף תיעוד ראשון"/>
-            : notes.map((n, i) => (
-              <div key={n.id} className="tl-item">
-                <div className="tl-left">
-                  <div className={`tl-dot${n.processed_text ? '' : ' gray'}`}/>
-                  {i < notes.length - 1 && <div className="tl-line"/>}
-                </div>
-                <div className="tl-body">
-                  <div className="tl-meta">
-                    <span className="tl-title">{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
-                    <span className="tl-date">{fmtDate(n.session_date || n.note_date || n.created_at)}</span>
-                    <button
-                      onClick={() => deleteNote(n.id)}
-                      style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 13, padding: '0 4px', opacity: 0.6 }}
-                      title="מחק תיעוד"
-                    >🗑</button>
+            : notes.map((n, i) => {
+              const sessionDate = n.session_date || n.note_date;
+              const isEditing = editingNote?.id === n.id;
+              return (
+                <div key={n.id} className="tl-item">
+                  <div className="tl-left">
+                    <div className={`tl-dot${n.processed_text ? '' : ' gray'}`}/>
+                    {i < notes.length - 1 && <div className="tl-line"/>}
                   </div>
-                  {n.processed_text
-                    ? <>
-                        <div className="tl-text">{n.processed_text}</div>
-                        <span className="ai-pill">✓ עובד עם AI</span>
-                        {n.content && n.content !== n.processed_text && (
+                  <div className="tl-body">
+                    {/* Header: session date + type */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{
+                        background: 'var(--primary-light, #ede9fe)', color: 'var(--primary)',
+                        borderRadius: 6, padding: '2px 9px', fontSize: 12, fontWeight: 600
+                      }}>
+                        📅 {sessionDate ? fmtDate(sessionDate) : 'תאריך לא ידוע'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
+                      {n.processed_text && <span className="ai-pill" style={{ margin: 0 }}>✓ AI</span>}
+                      {/* Actions */}
+                      <div style={{ marginRight: 'auto', display: 'flex', gap: 4 }}>
+                        <button
+                          onClick={() => isEditing ? setEditingNote(null) : startEditNote(n)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: '0 4px', opacity: 0.6, color: 'var(--primary)' }}
+                          title={isEditing ? 'ביטול עריכה' : 'ערוך'}
+                        >✏️</button>
+                        <button
+                          onClick={() => deleteNote(n.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 13, padding: '0 4px', opacity: 0.6 }}
+                          title="מחק תיעוד"
+                        >🗑</button>
+                      </div>
+                    </div>
+
+                    {/* Edit mode */}
+                    {isEditing ? (
+                      <div>
+                        <textarea
+                          rows={5}
+                          value={editingNote.text}
+                          onChange={e => setEditingNote({ ...editingNote, text: e.target.value })}
+                          style={{ marginBottom: 8, fontSize: 13, width: '100%' }}
+                          autoFocus
+                        />
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <button className="btn btn-secondary btn-xs" onClick={() => setEditingNote(null)}>ביטול</button>
+                          <button className="btn btn-primary btn-xs" onClick={saveEditNote}>שמור</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="tl-text">{n.processed_text || n.content}</div>
+                        {!n.processed_text && (
+                          <button className="btn btn-ghost btn-xs" style={{ marginTop: 6 }} disabled={processingId === n.id} onClick={() => processNote(n.id)}>
+                            {processingId === n.id ? 'מעבד...' : <>{Icon.ai(12)} עבד עם AI</>}
+                          </button>
+                        )}
+                        {n.processed_text && n.content && n.content !== n.processed_text && (
                           <details style={{ marginTop: 5 }}>
                             <summary style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>טקסט מקורי</summary>
                             <div className="tl-text" style={{ marginTop: 4, color: 'var(--text-muted)' }}>{n.content}</div>
                           </details>
                         )}
                       </>
-                    : <>
-                        <div className="tl-text">{n.content}</div>
-                        <button className="btn btn-ghost btn-xs" style={{ marginTop: 6 }} disabled={processingId === n.id} onClick={() => processNote(n.id)}>
-                          {processingId === n.id ? 'מעבד...' : <>{Icon.ai(12)} עבד עם AI</>}
-                        </button>
-                      </>
-                  }
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           }
         </div>
       )}
