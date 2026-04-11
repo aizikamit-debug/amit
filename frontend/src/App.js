@@ -386,8 +386,8 @@ function WeeklyTranscription() {
             if (d.text) {
               const newText = text ? text + ' ' + d.text : d.text;
               setText(newText);
-              // Auto-process: identify patients by calendar order
-              processTranscription(newText);
+              // Auto-split by patient name (raw), user can then choose save or save+AI
+              doSplitWith(newText);
             } else if (d.message) alert(d.message);
           } catch(e) { setTranscribing(false); alert('שגיאה בתמלול'); }
         };
@@ -417,30 +417,49 @@ function WeeklyTranscription() {
 
   const doProcess = async () => processTranscription(text);
 
-  const doSplit = async () => {
-    if (!text.trim()) return;
+  const doSplitWith = async (txt) => {
+    if (!txt?.trim()) return;
     setProcessing(true); setPreviews(null); setMode('raw');
     try {
-      const r = await notesAPI.splitWeekly(text);
+      const r = await notesAPI.parseWeekly(txt); // use calendar-aware parse always
       setPreviews(r.data.previews);
-    } catch (e) { alert('שגיאה בפיצול'); setMode(null); }
+    } catch (e) { alert('שגיאה בארגון'); setMode(null); }
     setProcessing(false);
   };
 
-  const doSave = async () => {
-    const toSave = previews.filter(p => p.patient_id && p.matched);
-    if (!toSave.length) return;
+  const doSplit = async () => doSplitWith(text);
+
+  const saveSegments = async (segments) => {
     setSaving(true);
     try {
-      await notesAPI.saveWeekly(toSave.map(p => ({
+      await notesAPI.saveWeekly(segments.map(p => ({
         patient_id: p.patient_id,
         content: p.content,
-        session_id: p.session_id || null   // link to the correct session
+        session_id: p.session_id || null
       })));
       setSaved(true); setPreviews(null); setText(''); setMode(null);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) { alert('שגיאה בשמירה'); }
     setSaving(false);
+  };
+
+  const doSave = async () => {
+    const toSave = previews.filter(p => p.patient_id && p.matched);
+    if (!toSave.length) return;
+    await saveSegments(toSave);
+  };
+
+  const doSaveWithAI = async () => {
+    const toSave = previews.filter(p => p.patient_id && p.matched);
+    if (!toSave.length) return;
+    setProcessing(true);
+    try {
+      // Re-process with AI then save
+      const r = await notesAPI.parseWeekly(text);
+      const aiPreviews = r.data.previews.filter(p => p.patient_id && p.matched);
+      await saveSegments(aiPreviews);
+    } catch (e) { alert('שגיאה בעיבוד AI'); }
+    setProcessing(false);
   };
 
   return (
@@ -522,7 +541,7 @@ function WeeklyTranscription() {
                         background: 'var(--primary-light, #ede9fe)', borderRadius: 6,
                         padding: '1px 7px', fontWeight: 500
                       }}>
-                        יום {p.day_name}
+                        {p.session_date ? fmtDate(p.session_date) + ' · ' : ''}יום {p.day_name}
                         {p.session_time ? ` · ${p.session_time.slice(0,5)}` : ''}
                       </span>
                     )}
@@ -538,10 +557,13 @@ function WeeklyTranscription() {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn btn-secondary btn-xs" onClick={() => { setPreviews(null); setMode(null); }}>חזור</button>
-            <button className="btn btn-primary btn-xs" onClick={doSave} disabled={saving || previews.length === 0}>
-              {saving ? 'שומר...' : `שמור ${previews.filter(p => p.matched).length} תיעודים`}
+            <button className="btn btn-ghost btn-sm" onClick={doSave} disabled={saving || processing || previews.filter(p=>p.matched).length === 0}>
+              {saving ? 'שומר...' : `💾 שמור (${previews.filter(p => p.matched).length})`}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={doSaveWithAI} disabled={saving || processing || previews.filter(p=>p.matched).length === 0}>
+              {processing ? '🤖 מעבד...' : `✨ שמור ועבד עם AI (${previews.filter(p => p.matched).length})`}
             </button>
           </div>
         </>

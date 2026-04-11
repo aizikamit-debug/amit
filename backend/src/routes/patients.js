@@ -108,17 +108,15 @@ router.get('/:id/summary', async (req, res) => {
   const db = req.app.locals.db;
   try {
     const sessions = await db.query(
-      `SELECT COUNT(*) as total, 
-              SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
-              SUM(CASE WHEN payment_status='pending' AND status='completed' THEN fee ELSE 0 END) as unpaid_amount
+      `SELECT
+         COUNT(*) as total_sessions,
+         SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed_sessions,
+         SUM(CASE WHEN payment_status='pending' AND status='completed' THEN COALESCE(fee,0) ELSE 0 END) as total_debt,
+         MAX(CASE WHEN status='completed' THEN session_date END) as last_session
        FROM sessions WHERE patient_id = $1`,
       [req.params.id]
     );
-    const lastNote = await db.query(
-      `SELECT note_date, note_type FROM clinical_notes WHERE patient_id = $1 ORDER BY note_date DESC LIMIT 1`,
-      [req.params.id]
-    );
-    res.json({ ...sessions.rows[0], last_note: lastNote.rows[0] || null });
+    res.json(sessions.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
