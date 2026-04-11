@@ -58,13 +58,6 @@ app.use('/api/transcribe', require('./routes/transcribe'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
-// TEMP: clear all notes
-app.delete('/api/admin/clear-notes', async (req, res) => {
-  try {
-    const r = await pool.query('DELETE FROM clinical_notes RETURNING id');
-    res.json({ deleted: r.rowCount });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 initDB().then(() => {
   app.listen(PORT, () => console.log(`🚀 Tiuderech server running on port ${PORT}`));
