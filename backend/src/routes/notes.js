@@ -273,15 +273,21 @@ router.post('/split-weekly', async (req, res) => {
 // POST save parsed weekly notes
 router.post('/save-weekly', async (req, res) => {
   const db = req.app.locals.db;
-  const { segments } = req.body; // [{patient_id, content}]
+  const { segments } = req.body; // [{patient_id, content, session_id?}]
   try {
     const saved = [];
     for (const seg of (segments || [])) {
       if (!seg.patient_id || !seg.content) continue;
+      // Get note_date from the linked session if available
+      let noteDate = new Date().toISOString().split('T')[0];
+      if (seg.session_id) {
+        const sess = await db.query('SELECT session_date FROM sessions WHERE id=$1', [seg.session_id]);
+        if (sess.rows[0]?.session_date) noteDate = sess.rows[0].session_date;
+      }
       const note = await db.query(
-        `INSERT INTO clinical_notes (patient_id, note_date, note_type, raw_text, processed_text, is_transcribed)
-         VALUES ($1, CURRENT_DATE, 'session', $2, $2, true) RETURNING id`,
-        [seg.patient_id, seg.content]
+        `INSERT INTO clinical_notes (patient_id, session_id, note_date, note_type, raw_text, processed_text, is_transcribed)
+         VALUES ($1, $2, $3, 'session', $4, $4, true) RETURNING id`,
+        [seg.patient_id, seg.session_id || null, noteDate, seg.content]
       );
       saved.push(note.rows[0].id);
     }

@@ -432,7 +432,11 @@ function WeeklyTranscription() {
     if (!toSave.length) return;
     setSaving(true);
     try {
-      await notesAPI.saveWeekly(toSave.map(p => ({ patient_id: p.patient_id, content: p.content })));
+      await notesAPI.saveWeekly(toSave.map(p => ({
+        patient_id: p.patient_id,
+        content: p.content,
+        session_id: p.session_id || null   // link to the correct session
+      })));
       setSaved(true); setPreviews(null); setText(''); setMode(null);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) { alert('שגיאה בשמירה'); }
@@ -1356,6 +1360,7 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
 
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [sessionForm, setSessionForm] = useState({ date: '', time: '09:00', status: 'scheduled', fee: '' });
+  const [expandedSession, setExpandedSession] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -1725,32 +1730,62 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
           </div>
           {sessions.length === 0
             ? <EmptyState icon={Icon.calendar(22)} title="אין פגישות" sub="הוסף פגישה ראשונה"/>
-            : sessions.map(s => (
-              <div key={s.id} className="session-item">
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: 13.5 }}>{fmtDate(s.session_date)}{s.session_time ? ` · ${s.session_time.slice(0, 5)}` : ''}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.duration_minutes ? `${s.duration_minutes} דקות` : '50 דקות'}</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${s.status === 'completed' ? 'badge-active' : s.status === 'cancelled' ? 'badge-ended' : 'badge-waitlist'}`}>
-                    {s.status === 'completed' ? 'הושלם' : s.status === 'cancelled' ? 'בוטל' : s.status === 'no_show' ? 'לא הגיע' : 'מתוכנן'}
-                  </span>
-                  {s.fee && <span style={{ fontFamily: 'var(--font-heading)', fontSize: 14, color: s.status === 'completed' ? 'var(--success)' : 'var(--danger)' }}>{fmt(s.fee)}</span>}
-                  {buildGCalUrl(s, fullName) && (
-                    <a
-                      href={buildGCalUrl(s, fullName)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-ghost btn-xs"
-                      style={{ display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--text-muted)' }}
-                      title="הוסף ליומן Google"
-                    >
-                      {Icon.gcal(13)} יומן
-                    </a>
+            : sessions.map(s => {
+              const sessionNotes = notes.filter(n => n.session_id === s.id || (
+                !n.session_id && n.note_date === (s.session_date?.split('T')[0] || s.session_date)
+              ));
+              const isExpanded = expandedSession === s.id;
+              return (
+                <div key={s.id} style={{ marginBottom: 8, borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                  <div className="session-item" style={{ borderRadius: 0, border: 'none', marginBottom: 0 }}>
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>{fmtDate(s.session_date)}{s.session_time ? ` · ${s.session_time.slice(0, 5)}` : ''}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.duration_minutes ? `${s.duration_minutes} דקות` : '50 דקות'}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className={`badge ${s.status === 'completed' ? 'badge-active' : s.status === 'cancelled' ? 'badge-ended' : 'badge-waitlist'}`}>
+                        {s.status === 'completed' ? 'הושלם' : s.status === 'cancelled' ? 'בוטל' : s.status === 'no_show' ? 'לא הגיע' : 'מתוכנן'}
+                      </span>
+                      {s.fee && <span style={{ fontFamily: 'var(--font-heading)', fontSize: 14, color: s.status === 'completed' ? 'var(--success)' : 'var(--danger)' }}>{fmt(s.fee)}</span>}
+                      {buildGCalUrl(s, fullName) && (
+                        <a href={buildGCalUrl(s, fullName)} target="_blank" rel="noopener noreferrer"
+                          className="btn btn-ghost btn-xs"
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, textDecoration: 'none', color: 'var(--text-muted)' }}
+                          title="הוסף ליומן Google">
+                          {Icon.gcal(13)} יומן
+                        </a>
+                      )}
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => setExpandedSession(isExpanded ? null : s.id)}
+                        title={isExpanded ? 'סגור תיעוד' : 'הצג תיעוד'}
+                        style={{ fontSize: 13, padding: '3px 8px' }}
+                      >
+                        {isExpanded ? '▲' : '▼'} {sessionNotes.length > 0 ? `תיעוד (${sessionNotes.length})` : 'תיעוד'}
+                      </button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div style={{ padding: '10px 14px', background: 'var(--page-bg)', borderTop: '1px solid var(--border)' }}>
+                      {sessionNotes.length === 0
+                        ? <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>אין תיעוד לפגישה זו</div>
+                        : sessionNotes.map(n => (
+                          <div key={n.id} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
+                            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 3 }}>
+                              {noteTypeLabel[n.note_type] || 'תיעוד'} · {fmtDate(n.session_date || n.note_date)}
+                              {n.processed_text && <span className="ai-pill" style={{ marginRight: 6 }}>✓ AI</span>}
+                            </div>
+                            <div style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                              {n.processed_text || n.content}
+                            </div>
+                          </div>
+                        ))
+                      }
+                    </div>
                   )}
                 </div>
-              </div>
-            ))
+              );
+            })
           }
           {showSessionForm && (
             <Modal title="פגישה חדשה" onClose={() => setShowSessionForm(false)}>
@@ -1814,7 +1849,7 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                 <div className="tl-body">
                   <div className="tl-meta">
                     <span className="tl-title">{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
-                    <span className="tl-date">{fmtDate(n.created_at)}</span>
+                    <span className="tl-date">{fmtDate(n.session_date || n.note_date || n.created_at)}</span>
                   </div>
                   {n.processed_text
                     ? <>
