@@ -46,15 +46,39 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const db = req.app.locals.db;
-  const { status, payment_status, notes, fee } = req.body;
+  const { status, payment_status, notes, fee, session_date, session_time, duration_minutes } = req.body;
   try {
     const result = await db.query(
-      `UPDATE sessions SET status = COALESCE($1, status), payment_status = COALESCE($2, payment_status),
-       notes = COALESCE($3, notes), fee = COALESCE($4, fee), updated_at = NOW()
-       WHERE id = $5 RETURNING *`,
-      [status, payment_status, notes, fee, req.params.id]
+      `UPDATE sessions SET
+        status = COALESCE($1, status),
+        payment_status = COALESCE($2, payment_status),
+        notes = COALESCE($3, notes),
+        fee = COALESCE($4, fee),
+        session_date = COALESCE($5, session_date),
+        session_time = COALESCE($6, session_time),
+        duration_minutes = COALESCE($7, duration_minutes),
+        updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [status, payment_status, notes, fee, session_date, session_time, duration_minutes, req.params.id]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const notesCheck = await db.query(
+      'SELECT COUNT(*) FROM clinical_notes WHERE session_id = $1',
+      [req.params.id]
+    );
+    if (parseInt(notesCheck.rows[0].count) > 0) {
+      return res.status(403).json({ error: 'לא ניתן למחוק פגישה עם תיעוד קליני שמור' });
+    }
+    await db.query('DELETE FROM sessions WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1386,6 +1386,8 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [editingSession, setEditingSession] = useState(null);
+  const [editSessionForm, setEditSessionForm] = useState({});
 
   useEffect(() => {
     patientsAPI.getById(patientId).then(r => {
@@ -1487,6 +1489,38 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
       sessionsAPI.getAll(patientId).then(r => setSessions(r.data));
       patientsAPI.getSummary(patientId).then(r => setSummary(r.data));
     } catch (e) { alert('שגיאה בהוספת פגישה'); }
+  };
+
+  const startEditSession = (s) => {
+    setEditingSession(s.id);
+    setEditSessionForm({
+      session_date: s.session_date?.split('T')[0] || s.session_date || '',
+      session_time: s.session_time?.slice(0, 5) || '',
+      status: s.status || 'scheduled',
+      fee: s.fee || '',
+      duration_minutes: s.duration_minutes || 50,
+    });
+  };
+
+  const saveEditSession = async () => {
+    try {
+      await sessionsAPI.update(editingSession, editSessionForm);
+      setEditingSession(null);
+      sessionsAPI.getAll(patientId).then(r => setSessions(r.data));
+      patientsAPI.getSummary(patientId).then(r => setSummary(r.data));
+    } catch (e) { alert('שגיאה בעריכת פגישה'); }
+  };
+
+  const deleteSession = async (sessionId) => {
+    if (!window.confirm('למחוק את הפגישה?')) return;
+    try {
+      await sessionsAPI.delete(sessionId);
+      sessionsAPI.getAll(patientId).then(r => setSessions(r.data));
+      patientsAPI.getSummary(patientId).then(r => setSummary(r.data));
+    } catch (e) {
+      const msg = e.response?.data?.error || 'שגיאה במחיקת פגישה';
+      alert(msg);
+    }
   };
 
   const submitQ = async () => {
@@ -1774,8 +1808,42 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                 !n.session_id && n.note_date === (s.session_date?.split('T')[0] || s.session_date)
               ));
               const isExpanded = expandedSession === s.id;
+              const isEditingThisSession = editingSession === s.id;
+              const hasNotes = sessionNotes.length > 0;
               return (
                 <div key={s.id} style={{ marginBottom: 8, borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                  {isEditingThisSession ? (
+                    <div style={{ padding: '12px 14px', background: 'var(--card-bg)' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: 'var(--primary)' }}>עריכת פגישה</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                        <Field label="תאריך">
+                          <input type="date" value={editSessionForm.session_date}
+                            onChange={e => setEditSessionForm({ ...editSessionForm, session_date: e.target.value })} />
+                        </Field>
+                        <Field label="שעה">
+                          <input type="time" value={editSessionForm.session_time}
+                            onChange={e => setEditSessionForm({ ...editSessionForm, session_time: e.target.value })} />
+                        </Field>
+                        <Field label="סטטוס">
+                          <select value={editSessionForm.status}
+                            onChange={e => setEditSessionForm({ ...editSessionForm, status: e.target.value })}>
+                            <option value="scheduled">מתוכנן</option>
+                            <option value="completed">הושלם</option>
+                            <option value="cancelled">בוטל</option>
+                            <option value="no_show">לא הגיע</option>
+                          </select>
+                        </Field>
+                        <Field label="תשלום (₪)">
+                          <input type="number" value={editSessionForm.fee}
+                            onChange={e => setEditSessionForm({ ...editSessionForm, fee: e.target.value })} />
+                        </Field>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-secondary btn-xs" onClick={() => setEditingSession(null)}>ביטול</button>
+                        <button className="btn btn-primary btn-xs" onClick={saveEditSession}>שמור</button>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="session-item" style={{ borderRadius: 0, border: 'none', marginBottom: 0 }}>
                     <div>
                       <div style={{ fontWeight: 500, fontSize: 13.5 }}>{fmtDate(s.session_date)}{s.session_time ? ` · ${s.session_time.slice(0, 5)}` : ''}</div>
@@ -1796,14 +1864,29 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                       )}
                       <button
                         className="btn btn-ghost btn-xs"
+                        onClick={() => startEditSession(s)}
+                        title="ערוך פגישה"
+                        style={{ fontSize: 12, padding: '3px 8px', opacity: 0.7 }}
+                      >✏️</button>
+                      {!hasNotes && (
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => deleteSession(s.id)}
+                          title="מחק פגישה"
+                          style={{ fontSize: 12, padding: '3px 8px', opacity: 0.6, color: 'var(--danger)' }}
+                        >🗑️</button>
+                      )}
+                      <button
+                        className="btn btn-ghost btn-xs"
                         onClick={() => setExpandedSession(isExpanded ? null : s.id)}
                         title={isExpanded ? 'סגור תיעוד' : 'הצג תיעוד'}
                         style={{ fontSize: 13, padding: '3px 8px' }}
                       >
-                        {isExpanded ? '▲' : '▼'} {sessionNotes.length > 0 ? `תיעוד (${sessionNotes.length})` : 'תיעוד'}
+                        {isExpanded ? '▲' : '▼'} {hasNotes ? `תיעוד (${sessionNotes.length})` : 'תיעוד'}
                       </button>
                     </div>
                   </div>
+                  )}
                   {isExpanded && (
                     <div style={{ padding: '10px 14px', background: 'var(--page-bg)', borderTop: '1px solid var(--border)' }}>
                       {sessionNotes.length === 0

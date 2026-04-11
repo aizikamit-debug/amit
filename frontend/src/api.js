@@ -16,6 +16,7 @@ export const sessionsAPI = {
   getWeek: (from_date, to_date) => API.get('/sessions', { params: { from_date, to_date } }),
   create: (patientId, data) => API.post('/sessions', { ...data, patient_id: patientId }),
   update: (id, data) => API.put(`/sessions/${id}`, data),
+  delete: (id) => API.delete(`/sessions/${id}`),
 };
 
 export const notesAPI = {
