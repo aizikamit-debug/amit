@@ -1440,14 +1440,6 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     setProcessingId(null);
   };
 
-  const deleteNote = async (id) => {
-    if (!window.confirm('למחוק תיעוד זה?')) return;
-    try {
-      await notesAPI.delete(id);
-      setNotes(prev => prev.filter(n => n.id !== id));
-    } catch (e) { alert('שגיאה במחיקה'); }
-  };
-
   const [editingNote, setEditingNote] = useState(null); // { id, text }
 
   const startEditNote = (n) => {
@@ -1794,17 +1786,43 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                     <div style={{ padding: '10px 14px', background: 'var(--page-bg)', borderTop: '1px solid var(--border)' }}>
                       {sessionNotes.length === 0
                         ? <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>אין תיעוד לפגישה זו</div>
-                        : sessionNotes.map(n => (
-                          <div key={n.id} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
-                            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 3 }}>
-                              {noteTypeLabel[n.note_type] || 'תיעוד'} · {fmtDate(n.session_date || n.note_date)}
-                              {n.processed_text && <span className="ai-pill" style={{ marginRight: 6 }}>✓ AI</span>}
+                        : sessionNotes.map(n => {
+                          const isEditingHere = editingNote?.id === n.id;
+                          return (
+                            <div key={n.id} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                                <span style={{
+                                  background: 'var(--primary-light, #ede9fe)', color: 'var(--primary)',
+                                  borderRadius: 6, padding: '2px 9px', fontSize: 12, fontWeight: 700
+                                }}>
+                                  📅 פגישה: {fmtDate(n.session_date || n.note_date || s.session_date)}
+                                </span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
+                                {n.processed_text && <span className="ai-pill" style={{ margin: 0 }}>✓ AI</span>}
+                                <button
+                                  onClick={() => isEditingHere ? setEditingNote(null) : startEditNote(n)}
+                                  style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, opacity: 0.6, color: 'var(--primary)' }}
+                                  title={isEditingHere ? 'ביטול' : 'ערוך'}
+                                >✏️</button>
+                              </div>
+                              {isEditingHere ? (
+                                <div>
+                                  <textarea rows={4} value={editingNote.text}
+                                    onChange={e => setEditingNote({ ...editingNote, text: e.target.value })}
+                                    style={{ marginBottom: 6, fontSize: 13, width: '100%' }} autoFocus/>
+                                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                    <button className="btn btn-secondary btn-xs" onClick={() => setEditingNote(null)}>ביטול</button>
+                                    <button className="btn btn-primary btn-xs" onClick={saveEditNote}>שמור</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                                  {n.processed_text || n.content}
+                                </div>
+                              )}
                             </div>
-                            <div style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
-                              {n.processed_text || n.content}
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       }
                     </div>
                   )}
@@ -1876,27 +1894,22 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                   </div>
                   <div className="tl-body">
                     {/* Header: session date + type */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                       <span style={{
                         background: 'var(--primary-light, #ede9fe)', color: 'var(--primary)',
-                        borderRadius: 6, padding: '2px 9px', fontSize: 12, fontWeight: 600
+                        borderRadius: 6, padding: '2px 9px', fontSize: 12.5, fontWeight: 700
                       }}>
-                        📅 {sessionDate ? fmtDate(sessionDate) : 'תאריך לא ידוע'}
+                        📅 פגישה: {sessionDate ? fmtDate(sessionDate) : 'תאריך לא ידוע'}
                       </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
                       {n.processed_text && <span className="ai-pill" style={{ margin: 0 }}>✓ AI</span>}
-                      {/* Actions */}
+                        {/* Actions */}
                       <div style={{ marginRight: 'auto', display: 'flex', gap: 4 }}>
                         <button
                           onClick={() => isEditing ? setEditingNote(null) : startEditNote(n)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: '0 4px', opacity: 0.6, color: 'var(--primary)' }}
                           title={isEditing ? 'ביטול עריכה' : 'ערוך'}
                         >✏️</button>
-                        <button
-                          onClick={() => deleteNote(n.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 13, padding: '0 4px', opacity: 0.6 }}
-                          title="מחק תיעוד"
-                        >🗑</button>
                       </div>
                     </div>
 
