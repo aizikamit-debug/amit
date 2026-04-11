@@ -1440,6 +1440,14 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     setProcessingId(null);
   };
 
+  const deleteNote = async (id) => {
+    if (!window.confirm('למחוק תיעוד זה?')) return;
+    try {
+      await notesAPI.delete(id);
+      setNotes(prev => prev.filter(n => n.id !== id));
+    } catch (e) { alert('שגיאה במחיקה'); }
+  };
+
   const addSession = async () => {
     try {
       await sessionsAPI.create(patientId, { ...sessionForm, fee: sessionForm.fee || patient?.session_fee });
@@ -1850,6 +1858,11 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                   <div className="tl-meta">
                     <span className="tl-title">{noteTypeLabel[n.note_type] || 'תיעוד'}</span>
                     <span className="tl-date">{fmtDate(n.session_date || n.note_date || n.created_at)}</span>
+                    <button
+                      onClick={() => deleteNote(n.id)}
+                      style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 13, padding: '0 4px', opacity: 0.6 }}
+                      title="מחק תיעוד"
+                    >🗑</button>
                   </div>
                   {n.processed_text
                     ? <>

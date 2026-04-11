@@ -23,6 +23,7 @@ export const notesAPI = {
   create: (patientId, data) => API.post('/notes', { ...data, patient_id: patientId }),
   update: (id, data) => API.put(`/notes/${id}`, data),
   processWithAI: (id) => API.post(`/notes/${id}/process`),
+  delete: (id) => API.delete(`/notes/${id}`),
   parseWeekly: (transcription) => API.post('/notes/parse-weekly', { transcription }),
   splitWeekly: (transcription) => API.post('/notes/split-weekly', { transcription }),
   saveWeekly: (segments) => API.post('/notes/save-weekly', { segments }),

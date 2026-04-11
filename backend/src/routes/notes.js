@@ -46,6 +46,16 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.delete('/:id', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    await db.query('DELETE FROM clinical_notes WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // AI processing endpoint
 router.post('/:id/process', async (req, res) => {
   const db = req.app.locals.db;
