@@ -65,6 +65,23 @@ router.get('/', async (req, res) => {
        ORDER BY last_session ASC NULLS FIRST LIMIT 5`
     );
 
+    // Week changes: cancelled/no_show sessions this week
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    const wStart = weekStart.toISOString().split('T')[0];
+    const wEnd = weekEnd.toISOString().split('T')[0];
+
+    const weekChangesRes = await db.query(
+      `SELECT s.id, s.session_date, s.session_time, s.status, p.first_name, p.last_name
+       FROM sessions s JOIN patients p ON s.patient_id = p.id
+       WHERE s.session_date BETWEEN $1 AND $2
+         AND s.status IN ('cancelled', 'no_show')
+       ORDER BY s.session_date ASC, s.session_time ASC`,
+      [wStart, wEnd]
+    );
+
     res.json({
       period: { year, month, start: periodStart, end: periodEnd },
       patients: { active: parseInt(patientsRes.rows[0].active) },
@@ -72,7 +89,8 @@ router.get('/', async (req, res) => {
       income: incomeRes.rows[0],
       trend: trendRes.rows,
       unpaid_billing: unpaidRes.rows,
-      inactive_patients: inactiveRes.rows
+      inactive_patients: inactiveRes.rows,
+      week_changes: weekChangesRes.rows
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

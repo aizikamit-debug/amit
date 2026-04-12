@@ -779,6 +779,7 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [summary, setSummary] = useState(null);
+  const [weekChanges, setWeekChanges] = useState([]);
   const now = new Date();
   const [summaryMonth, setSummaryMonth] = useState(initMonth || now.getMonth() + 1);
   const [summaryYear, setSummaryYear] = useState(initYear || now.getFullYear());
@@ -827,6 +828,7 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
     dashboardAPI.get({ month: summaryMonth, year: summaryYear })
       .then(r => {
         setSummary(r.data);
+        setWeekChanges(r.data?.week_changes || []);
         setUnpaid((r.data?.unpaid_billing || []).map(b => ({
           patient_name: `${b.first_name} ${b.last_name}`,
           amount: b.amount
@@ -1037,6 +1039,31 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
           ))}
         </div>
       </div>
+
+      {/* ── WEEK CHANGES ── */}
+      {weekChanges.length > 0 && (
+        <div className="card card-sm" style={{ marginBottom: 16, borderRight: '3px solid #f59e0b' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: '#b45309' }}>
+            ⚠️ שינויים השבוע ({weekChanges.length})
+          </div>
+          {weekChanges.map(s => {
+            const dateStr = s.session_date ? new Date(s.session_date).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' }) : '';
+            const timeStr = s.session_time ? s.session_time.slice(0, 5) : '';
+            const statusMap = { cancelled: 'בוטל', no_show: 'לא הגיע' };
+            return (
+              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                <span style={{ fontWeight: 500 }}>{s.first_name} {s.last_name}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{dateStr}{timeStr ? ` · ${timeStr}` : ''}</span>
+                <span style={{
+                  background: s.status === 'cancelled' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                  color: s.status === 'cancelled' ? '#dc2626' : '#b45309',
+                  borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 600
+                }}>{statusMap[s.status] || s.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── OPEN DEBT ── */}
       {(() => {
