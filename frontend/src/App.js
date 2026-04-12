@@ -1368,6 +1368,12 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const [billing, setBilling] = useState([]);
   const [qTypes, setQTypes] = useState([]);
 
+  // Treatment summary state
+  const [treatmentSummary, setTreatmentSummary] = useState('');
+  const [summaryInstructions, setSummaryInstructions] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryGenerated, setSummaryGenerated] = useState(false);
+
   // Intake state
   const [intake, setIntake] = useState(null);
   const [intakeVersions, setIntakeVersions] = useState([]);
@@ -1676,6 +1682,7 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     { id: 'sessions', label: 'פגישות' },
     { id: 'notes', label: 'תיעוד' },
     { id: 'intake', label: 'אינטייק' },
+    { id: 'summary', label: 'סיכום טיפול' },
     { id: 'questionnaires', label: 'שאלונים' },
     { id: 'billing', label: 'חיוב' },
   ];
@@ -1865,7 +1872,15 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
       {/* ── SESSIONS ── */}
       {tab === 'sessions' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              title="ייצא את כל הפגישות כ-PDF"
+              onClick={() => {
+                const url = `${process.env.REACT_APP_API_URL || '/api'}/export/sessions/${patientId}/pdf`;
+                window.open(url, '_blank');
+              }}
+            >📄 ייצא PDF</button>
             <button className="btn btn-primary btn-sm" onClick={() => setShowSessionForm(true)}>{Icon.plus(13)} פגישה חדשה</button>
           </div>
           {sessions.length === 0
@@ -2307,6 +2322,80 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TREATMENT SUMMARY ── */}
+      {tab === 'summary' && (
+        <div>
+          {!summaryGenerated ? (
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 10 }}>סיכום טיפול עם AI</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.6 }}>
+                ה-AI ישלב את האינטייק, כל סיכומי הפגישות ותוצאות השאלונים ויכתוב סיכום טיפול רשמי.
+              </div>
+              <Field label="הוראות לסיכום (אופציונלי)">
+                <textarea
+                  rows={3}
+                  placeholder="לדוגמה: הדגש את עבודת הטראומה, התמקד בשינוי הדפוסים הרלציוניים..."
+                  value={summaryInstructions}
+                  onChange={e => setSummaryInstructions(e.target.value)}
+                  style={{ fontSize: 13 }}
+                />
+              </Field>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={summaryLoading}
+                  onClick={async () => {
+                    setSummaryLoading(true);
+                    try {
+                      const API_URL = process.env.REACT_APP_API_URL || '/api';
+                      const r = await fetch(`${API_URL}/summary/patient/${patientId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ instructions: summaryInstructions })
+                      });
+                      const data = await r.json();
+                      if (data.error) throw new Error(data.error);
+                      setTreatmentSummary(data.summary);
+                      setSummaryGenerated(true);
+                    } catch (e) { alert('שגיאה ביצירת סיכום: ' + e.message); }
+                    finally { setSummaryLoading(false); }
+                  }}
+                >
+                  {summaryLoading ? '⏳ יוצר סיכום...' : '✨ צור סיכום טיפול'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>סיכום טיפול</div>
+                <div style={{ marginRight: 'auto', display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setSummaryGenerated(false); setTreatmentSummary(''); }} disabled={summaryLoading}>
+                    🔄 גרסה חלופית
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      const blob = new Blob([treatmentSummary], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url; a.download = `סיכום_טיפול_${patient.first_name}_${patient.last_name}.txt`;
+                      a.click(); URL.revokeObjectURL(url);
+                    }}
+                  >📥 הורד</button>
+                </div>
+              </div>
+              <textarea
+                value={treatmentSummary}
+                onChange={e => setTreatmentSummary(e.target.value)}
+                rows={20}
+                style={{ fontSize: 13.5, lineHeight: 1.8, fontFamily: 'var(--font-body)' }}
+              />
             </div>
           )}
         </div>

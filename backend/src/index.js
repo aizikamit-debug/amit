@@ -70,6 +70,8 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/calendar', require('./routes/calendar'));
 app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/intake', require('./routes/intake'));
+app.use('/api/export', require('./routes/export'));
+app.use('/api/summary', require('./routes/summary'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
