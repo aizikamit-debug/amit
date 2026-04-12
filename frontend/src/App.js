@@ -351,6 +351,8 @@ function BillingPanel() {
 }
 
 // ─── WEEKLY TRANSCRIPTION (Dashboard) ────────────────────────────────────────
+const DAY_NAMES_HE = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+
 function WeeklyTranscription() {
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -360,6 +362,29 @@ function WeeklyTranscription() {
   const [previews, setPreviews] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [weekSessions, setWeekSessions] = useState([]);
+
+  // Load this week's sessions on mount
+  useEffect(() => {
+    const now = new Date();
+    const dow = now.getDay(); // 0=Sun
+    const sun = new Date(now); sun.setDate(now.getDate() - dow);
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6);
+    const fmt2 = d => d.toISOString().split('T')[0];
+    sessionsAPI.getWeek(fmt2(sun), fmt2(sat))
+      .then(r => {
+        const sorted = (r.data || [])
+          .filter(s => s.status !== 'cancelled')
+          .sort((a, b) => {
+            const da = a.session_date || '';
+            const db = b.session_date || '';
+            if (da !== db) return da < db ? -1 : 1;
+            return (a.session_time || '') < (b.session_time || '') ? -1 : 1;
+          });
+        setWeekSessions(sorted);
+      })
+      .catch(() => {});
+  }, []);
 
   const startRec = async () => {
     try {
@@ -471,6 +496,32 @@ function WeeklyTranscription() {
 
       {!previews ? (
         <>
+          {/* Week sessions reference panel */}
+          {weekSessions.length > 0 && (
+            <div style={{ marginBottom: 12, background: 'var(--page-bg)', borderRadius: 10, padding: '10px 14px', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 0.3 }}>📅 פגישות השבוע</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {weekSessions.map((s, i) => {
+                  const d = new Date(s.session_date);
+                  const dayHe = DAY_NAMES_HE[d.getDay()];
+                  const dateStr = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
+                  const timeStr = s.session_time ? s.session_time.slice(0, 5) : '';
+                  const name = `${s.first_name} ${s.last_name}`;
+                  return (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                      <span style={{ minWidth: 22, textAlign: 'center', fontWeight: 700, fontSize: 11,
+                        background: 'var(--primary-light, #ede9fe)', color: 'var(--primary)',
+                        borderRadius: 5, padding: '1px 5px' }}>{i + 1}</span>
+                      <span style={{ fontWeight: 600, minWidth: 90 }}>{name}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>
+                        יום {dayHe} · {dateStr}{timeStr ? ` · ${timeStr}` : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 7, marginBottom: 10 }}>
             <button
               className={`btn btn-xs ${isRecording ? 'btn-danger' : 'btn-ghost'}`}
