@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { dashboardAPI, patientsAPI, sessionsAPI, notesAPI, questionnairesAPI, billingAPI, settingsAPI, calendarAPI } from './api';
+import { dashboardAPI, patientsAPI, sessionsAPI, notesAPI, questionnairesAPI, billingAPI, settingsAPI, calendarAPI, intakeAPI } from './api';
 import './App.css';
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -1368,6 +1368,20 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const [billing, setBilling] = useState([]);
   const [qTypes, setQTypes] = useState([]);
 
+  // Intake state
+  const [intake, setIntake] = useState(null);
+  const [intakeVersions, setIntakeVersions] = useState([]);
+  const [intakeMode, setIntakeMode] = useState('view'); // 'view' | 'form' | 'freetext' | 'ai-edit'
+  const [intakeForm, setIntakeForm] = useState({
+    presenting_problem: '', psychiatric_history: '', medical_history: '',
+    family_history: '', developmental_history: '', substance_use: '',
+    risk_assessment: '', mse: '', clinical_formulation: ''
+  });
+  const [intakeFreeText, setIntakeFreeText] = useState('');
+  const [intakeAIInstructions, setIntakeAIInstructions] = useState('');
+  const [intakeAIResult, setIntakeAIResult] = useState(null);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [noteType, setNoteType] = useState('session');
@@ -1403,6 +1417,14 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     if (tab === 'sessions') sessionsAPI.getAll(patientId).then(r => setSessions(r.data)).catch(() => {});
     if (tab === 'questionnaires') questionnairesAPI.getAll(patientId).then(r => setQuestionnaires(r.data)).catch(() => {});
     if (tab === 'billing') billingAPI.getPatient(patientId).then(r => setBilling(r.data)).catch(() => {});
+    if (tab === 'intake') {
+      intakeAPI.get(patientId).then(r => {
+        setIntake(r.data);
+        if (r.data?.content) setIntakeForm(r.data.content);
+        setIntakeMode('view');
+      }).catch(() => {});
+      intakeAPI.getVersions(patientId).then(r => setIntakeVersions(r.data)).catch(() => {});
+    }
   }, [tab, patientId]);
 
   const startRecording = async () => {
@@ -1523,6 +1545,50 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     }
   };
 
+  // ── Intake functions ──
+  const INTAKE_SECTIONS = [
+    { key: 'presenting_problem', label: 'סיבת פנייה', placeholder: 'תיאור הבעיה בלשון המטופל, מתי החלה...' },
+    { key: 'psychiatric_history', label: 'היסטוריה פסיכיאטרית ופסיכולוגית', placeholder: 'טיפולים קודמים, אשפוזים, תרופות, אבחנות...' },
+    { key: 'medical_history', label: 'היסטוריה רפואית', placeholder: 'מחלות כרוניות, תרופות נוכחיות, שינה/תיאבון/אנרגיה...' },
+    { key: 'family_history', label: 'היסטוריה משפחתית', placeholder: 'הורים, אחים, ילדות, טראומות...' },
+    { key: 'developmental_history', label: 'היסטוריה התפתחותית וחברתית', placeholder: 'לימודים, עבודה, מערכות יחסים, תמיכה חברתית...' },
+    { key: 'substance_use', label: 'שימוש בחומרים', placeholder: 'אלכוהול, סמים, קנאביס, עישון — תדירות וכמות...' },
+    { key: 'risk_assessment', label: 'הערכת סיכון', placeholder: 'מחשבות אובדניות, פגיעה עצמית, פגיעה באחרים...' },
+    { key: 'mse', label: 'בדיקת מצב נפשי (MSE)', placeholder: 'מראה, מצב רוח, חשיבה, תפיסה, קוגניציה, תובנה...' },
+    { key: 'clinical_formulation', label: 'ניסוח קליני ורשמים ראשוניים', placeholder: 'השערות אבחנתיות, נקודות חוזק, כיוון טיפולי...' },
+  ];
+
+  const saveIntake = async (content, editType = 'manual', aiInstructions = null) => {
+    try {
+      const r = await intakeAPI.save(patientId, content, editType, aiInstructions);
+      setIntake(r.data);
+      setIntakeForm(content);
+      setIntakeMode('view');
+      setIntakeAIResult(null);
+      intakeAPI.getVersions(patientId).then(r2 => setIntakeVersions(r2.data)).catch(() => {});
+    } catch (e) { alert('שגיאה בשמירת אינטייק'); }
+  };
+
+  const organizeIntakeWithAI = async () => {
+    if (!intakeFreeText.trim()) return;
+    setIntakeLoading(true);
+    try {
+      const r = await intakeAPI.organize(intakeFreeText);
+      setIntakeForm(r.data.organized);
+      setIntakeMode('form');
+    } catch (e) { alert('שגיאה בארגון AI: ' + (e.response?.data?.error || e.message)); }
+    finally { setIntakeLoading(false); }
+  };
+
+  const editIntakeWithAI = async () => {
+    setIntakeLoading(true);
+    try {
+      const r = await intakeAPI.editAI(intakeForm, intakeAIInstructions);
+      setIntakeAIResult(r.data.edited);
+    } catch (e) { alert('שגיאה בעריכת AI: ' + (e.response?.data?.error || e.message)); }
+    finally { setIntakeLoading(false); }
+  };
+
   const submitQ = async () => {
     if (!selectedQCode) return;
     try {
@@ -1609,6 +1675,7 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
     { id: 'info', label: 'פרטים' },
     { id: 'sessions', label: 'פגישות' },
     { id: 'notes', label: 'תיעוד' },
+    { id: 'intake', label: 'אינטייק' },
     { id: 'questionnaires', label: 'שאלונים' },
     { id: 'billing', label: 'חיוב' },
   ];
@@ -2057,6 +2124,194 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
         </div>
       )}
 
+      {/* ── INTAKE ── */}
+      {tab === 'intake' && (
+        <div>
+          {/* View mode */}
+          {intakeMode === 'view' && (
+            <div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary btn-sm" onClick={() => { setIntakeMode('form'); }}>
+                  {intake ? '✏️ ערוך אינטייק' : '+ מלא אינטייק'}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setIntakeMode('freetext')} title="הדבק טקסט חופשי וה-AI יארגן אותו">
+                  📋 הזן טקסט חופשי + AI
+                </button>
+                {intake && intakeVersions.length > 1 && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>
+                    גרסה {intake.version_number} מתוך {intakeVersions.length}
+                  </span>
+                )}
+              </div>
+              {!intake ? (
+                <EmptyState icon="📋" title="אין אינטייק" sub="מלא טופס אינטייק ראשוני למטופל"/>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>
+                    עודכן: {new Date(intake.created_at).toLocaleDateString('he-IL')}
+                    {intake.edit_type === 'ai' && <span className="ai-pill" style={{ margin: '0 8px' }}>AI</span>}
+                  </div>
+                  {INTAKE_SECTIONS.map(s => (
+                    intake.content?.[s.key] ? (
+                      <div key={s.key} style={{ marginBottom: 18 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--primary)', marginBottom: 4 }}>{s.label}</div>
+                        <div style={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)', background: 'var(--page-bg)', borderRadius: 8, padding: '10px 14px' }}>
+                          {intake.content[s.key]}
+                        </div>
+                      </div>
+                    ) : null
+                  ))}
+                  {/* Version history */}
+                  {intakeVersions.length > 1 && (
+                    <details style={{ marginTop: 16 }}>
+                      <summary style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 8 }}>
+                        היסטוריית גרסאות ({intakeVersions.length})
+                      </summary>
+                      {intakeVersions.map(v => (
+                        <div key={v.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 6, marginBottom: 4, background: 'var(--page-bg)' }}>
+                          <span style={{ fontSize: 12 }}>
+                            גרסה {v.version_number} · {new Date(v.created_at).toLocaleDateString('he-IL')}
+                            {v.edit_type === 'ai' && <span className="ai-pill" style={{ margin: '0 6px', fontSize: 10 }}>AI</span>}
+                          </span>
+                          <button className="btn btn-ghost btn-xs" onClick={async () => {
+                            const r = await intakeAPI.getVersion(v.id);
+                            setIntake(r.data); setIntakeForm(r.data.content || {});
+                          }}>צפה</button>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Structured form mode */}
+          {intakeMode === 'form' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setIntakeMode('view')}>← חזרה</button>
+                <h3 style={{ margin: 0, fontSize: 15 }}>טופס אינטייק פסיכולוגי</h3>
+              </div>
+              {INTAKE_SECTIONS.map(s => (
+                <div key={s.key} style={{ marginBottom: 14 }}>
+                  <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 5, color: 'var(--text-primary)' }}>{s.label}</label>
+                  <textarea
+                    rows={3}
+                    placeholder={s.placeholder}
+                    value={intakeForm[s.key] || ''}
+                    onChange={e => setIntakeForm({ ...intakeForm, [s.key]: e.target.value })}
+                    style={{ fontSize: 13 }}
+                  />
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setIntakeMode('view')}>ביטול</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setIntakeAIResult(null); setIntakeMode('ai-edit'); }}>
+                  ✨ שמור עם עריכת AI
+                </button>
+                <button className="btn btn-primary btn-sm" onClick={() => saveIntake(intakeForm, 'manual')}>
+                  💾 שמור כמות שהוא
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Free text mode */}
+          {intakeMode === 'freetext' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setIntakeMode('view')}>← חזרה</button>
+                <h3 style={{ margin: 0, fontSize: 15 }}>הזנת טקסט חופשי</h3>
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 10 }}>
+                הדבק טקסט חופשי מהפגישה — ה-AI יארגן אותו אוטומטית לסעיפי האינטייק
+              </div>
+              <textarea
+                rows={12}
+                placeholder="הדבק כאן את הסיכום החופשי מפגישת האינטייק..."
+                value={intakeFreeText}
+                onChange={e => setIntakeFreeText(e.target.value)}
+                style={{ fontSize: 13, marginBottom: 12 }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setIntakeMode('view')}>ביטול</button>
+                <button className="btn btn-primary btn-sm" onClick={organizeIntakeWithAI} disabled={intakeLoading || !intakeFreeText.trim()}>
+                  {intakeLoading ? 'מארגן...' : '🤖 ארגן עם AI'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* AI edit mode */}
+          {intakeMode === 'ai-edit' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setIntakeMode('form')}>← חזרה לטופס</button>
+                <h3 style={{ margin: 0, fontSize: 15 }}>עריכה קלינית עם AI</h3>
+              </div>
+              {!intakeAIResult ? (
+                <div>
+                  <label style={{ display: 'block', fontWeight: 600, fontSize: 13, marginBottom: 6 }}>הוראות לעריכה (אופציונלי)</label>
+                  <textarea
+                    rows={3}
+                    placeholder="לדוגמה: התמקד בהיבט הטראומטי, הוסף ניסוח קליני לסעיף 10..."
+                    value={intakeAIInstructions}
+                    onChange={e => setIntakeAIInstructions(e.target.value)}
+                    style={{ fontSize: 13, marginBottom: 12 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setIntakeMode('form')}>ביטול</button>
+                    <button className="btn btn-primary btn-sm" onClick={editIntakeWithAI} disabled={intakeLoading}>
+                      {intakeLoading ? 'עורך...' : '✨ צור עריכה'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: 'var(--text-muted)' }}>מקורי</div>
+                      {INTAKE_SECTIONS.map(s => intakeForm[s.key] ? (
+                        <div key={s.key} style={{ marginBottom: 10 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-muted)', marginBottom: 3 }}>{s.label}</div>
+                          <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text-secondary)', background: 'var(--page-bg)', borderRadius: 6, padding: '8px 10px' }}>{intakeForm[s.key]}</div>
+                        </div>
+                      ) : null)}
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: 'var(--primary)' }}>גרסת AI ✨</div>
+                      {INTAKE_SECTIONS.map(s => intakeAIResult[s.key] ? (
+                        <div key={s.key} style={{ marginBottom: 10 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--primary)', marginBottom: 3 }}>{s.label}</div>
+                          <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text-secondary)', background: 'rgba(99,102,241,0.05)', borderRadius: 6, padding: '8px 10px', border: '1px solid rgba(99,102,241,0.15)' }}>
+                            <textarea
+                              value={intakeAIResult[s.key]}
+                              onChange={e => setIntakeAIResult({ ...intakeAIResult, [s.key]: e.target.value })}
+                              rows={3}
+                              style={{ fontSize: 12, padding: 0, background: 'transparent', border: 'none', boxShadow: 'none', resize: 'vertical' }}
+                            />
+                          </div>
+                        </div>
+                      ) : null)}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setIntakeAIResult(null); editIntakeWithAI(); }} disabled={intakeLoading}>
+                      {intakeLoading ? '...' : '🔄 גרסה חלופית'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => saveIntake(intakeForm, 'manual')}>שמור מקורי</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => saveIntake(intakeAIResult, 'ai', intakeAIInstructions)}>
+                      ✨ שמור גרסת AI
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── QUESTIONNAIRES ── */}
       {tab === 'questionnaires' && (
         <div>
@@ -2068,7 +2323,7 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
             : questionnaires.map(q => (
               <div key={q.id} className="card card-sm" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div>
-                  <div style={{ fontWeight: 500, fontSize: 13.5 }}>{q.questionnaire_name || q.questionnaire_code}</div>
+                  <div style={{ fontWeight: 500, fontSize: 13.5 }}>{q.name_he || q.questionnaire_name || q.code || q.questionnaire_code}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(q.completed_at)}</div>
                 </div>
                 <div style={{ textAlign: 'left' }}>
@@ -2088,9 +2343,10 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                   } else { setSelectedQFull(null); }
                 }}>
                   <option value="">בחר...</option>
-                  {qTypes.map(qt => <option key={qt.code} value={qt.code}>{qt.name}</option>)}
+                  {qTypes.map(qt => <option key={qt.code} value={qt.code}>{qt.name_he || qt.name || qt.code}</option>)}
                 </select>
               </Field>
+              {selectedQFull && <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12, color: 'var(--primary)' }}>{selectedQFull.name_he || selectedQFull.name}</div>}
               {selectedQFull && (selectedQFull.questions || []).map((q, qi) => (
                 <div key={qi} className="q-question-box">
                   <div style={{ fontSize: 13, marginBottom: 8 }}>{q.text}</div>

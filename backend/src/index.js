@@ -36,6 +36,20 @@ async function initDB() {
     await pool.query(`ALTER TABLE billing_records ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50)`).catch(() => {});
     await pool.query(`ALTER TABLE billing_records ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100)`).catch(() => {});
     await pool.query(`ALTER TABLE billing_records ADD COLUMN IF NOT EXISTS sent_count INTEGER DEFAULT 0`).catch(() => {});
+
+    // Intake versions table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS intake_versions (
+        id SERIAL PRIMARY KEY,
+        patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
+        version_number INTEGER NOT NULL DEFAULT 1,
+        content JSONB NOT NULL DEFAULT '{}',
+        edit_type VARCHAR(20) DEFAULT 'manual',
+        ai_instructions TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `).catch(() => {});
+
     console.log('✅ Database initialized');
   } catch (err) {
     console.error('❌ DB init error:', err.message);
@@ -55,6 +69,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/calendar', require('./routes/calendar'));
 app.use('/api/transcribe', require('./routes/transcribe'));
+app.use('/api/intake', require('./routes/intake'));
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 

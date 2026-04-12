@@ -62,6 +62,16 @@ export const settingsAPI = {
   update: (data) => API.put('/settings', data),
 };
 
+export const intakeAPI = {
+  get: (patientId) => API.get(`/intake/patient/${patientId}`),
+  getVersions: (patientId) => API.get(`/intake/patient/${patientId}/versions`),
+  getVersion: (id) => API.get(`/intake/versions/${id}`),
+  save: (patientId, content, editType, aiInstructions) =>
+    API.post(`/intake/patient/${patientId}`, { content, edit_type: editType, ai_instructions: aiInstructions }),
+  organize: (text) => API.post('/intake/organize', { text }),
+  editAI: (content, instructions) => API.post('/intake/edit-ai', { content, instructions }),
+};
+
 export const calendarAPI = {
   status: () => API.get('/calendar/status'),
   calendars: () => API.get('/calendar/calendars'),
