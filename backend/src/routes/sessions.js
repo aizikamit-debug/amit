@@ -48,6 +48,22 @@ router.put('/:id', async (req, res) => {
   const db = req.app.locals.db;
   const { status, payment_status, notes, fee, session_date, session_time, duration_minutes } = req.body;
   try {
+    // If date or time is being changed, store originals first (only on first reschedule)
+    if (session_date || session_time) {
+      const current = await db.query('SELECT session_date, session_time, original_session_date, original_session_time FROM sessions WHERE id = $1', [req.params.id]);
+      if (current.rows.length > 0) {
+        const cur = current.rows[0];
+        const dateChanged = session_date && session_date !== cur.session_date?.toISOString?.().split('T')[0] && session_date !== cur.session_date;
+        const timeChanged = session_time && session_time !== cur.session_time;
+        if ((dateChanged || timeChanged) && !cur.original_session_date) {
+          await db.query(
+            'UPDATE sessions SET original_session_date = session_date, original_session_time = session_time WHERE id = $1',
+            [req.params.id]
+          );
+        }
+      }
+    }
+
     const result = await db.query(
       `UPDATE sessions SET
         status = COALESCE($1, status),

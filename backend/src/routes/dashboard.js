@@ -73,12 +73,25 @@ router.get('/', async (req, res) => {
     const wStart = weekStart.toISOString().split('T')[0];
     const wEnd = weekEnd.toISOString().split('T')[0];
 
-    const weekChangesRes = await db.query(
+    // Cancelled / no-show this week
+    const weekCancelledRes = await db.query(
       `SELECT s.id, s.session_date, s.session_time, s.status, p.first_name, p.last_name
        FROM sessions s JOIN patients p ON s.patient_id = p.id
        WHERE s.session_date BETWEEN $1 AND $2
          AND s.status IN ('cancelled', 'no_show')
        ORDER BY s.session_date ASC, s.session_time ASC`,
+      [wStart, wEnd]
+    );
+
+    // Rescheduled this week (original date was this week, session moved)
+    const weekRescheduledRes = await db.query(
+      `SELECT s.id, s.session_date, s.session_time, s.status,
+              s.original_session_date, s.original_session_time,
+              p.first_name, p.last_name
+       FROM sessions s JOIN patients p ON s.patient_id = p.id
+       WHERE s.original_session_date BETWEEN $1 AND $2
+         AND s.original_session_date IS NOT NULL
+       ORDER BY s.original_session_date ASC, s.original_session_time ASC`,
       [wStart, wEnd]
     );
 
@@ -90,7 +103,8 @@ router.get('/', async (req, res) => {
       trend: trendRes.rows,
       unpaid_billing: unpaidRes.rows,
       inactive_patients: inactiveRes.rows,
-      week_changes: weekChangesRes.rows
+      week_cancelled: weekCancelledRes.rows,
+      week_rescheduled: weekRescheduledRes.rows
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

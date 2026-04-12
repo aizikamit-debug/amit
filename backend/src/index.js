@@ -37,6 +37,10 @@ async function initDB() {
     await pool.query(`ALTER TABLE billing_records ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100)`).catch(() => {});
     await pool.query(`ALTER TABLE billing_records ADD COLUMN IF NOT EXISTS sent_count INTEGER DEFAULT 0`).catch(() => {});
 
+    // Rescheduled sessions tracking
+    await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS original_session_date DATE`).catch(() => {});
+    await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS original_session_time TIME`).catch(() => {});
+
     // Intake versions table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS intake_versions (
