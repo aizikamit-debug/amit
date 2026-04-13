@@ -76,6 +76,8 @@ app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/intake', require('./routes/intake'));
 app.use('/api/export', require('./routes/export'));
 app.use('/api/summary', require('./routes/summary'));
+const { router: backupRouter, runBackup } = require('./routes/backup');
+app.use('/api/backup', backupRouter);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
@@ -83,13 +85,25 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }
 initDB().then(() => {
   app.listen(PORT, () => console.log(`🚀 Tiuderech server running on port ${PORT}`));
 
-  // Google Calendar auto-sync every 5 minutes
   const cron = require('node-cron');
+
+  // Google Calendar auto-sync every 5 minutes
   const { syncCalendar } = require('./routes/calendar');
   cron.schedule('*/5 * * * *', async () => {
     try { await syncCalendar(pool); }
     catch (err) { console.error('Calendar sync error:', err.message); }
   });
   console.log('⏰ Google Calendar sync scheduled (every 5 min)');
+
+  // Daily DB backup at 02:00
+  cron.schedule('0 2 * * *', async () => {
+    try {
+      const result = await runBackup(pool);
+      console.log(`✅ Daily backup complete: ${result.filename} (${result.patients} patients, ${result.sessions} sessions)`);
+    } catch (err) {
+      console.error('❌ Backup error:', err.message);
+    }
+  });
+  console.log('💾 Daily backup scheduled (02:00)');
 });
 
