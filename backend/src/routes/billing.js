@@ -138,16 +138,26 @@ router.post('/preview-document', async (req, res) => {
     if (!clientId) {
       const clientRes = await axios.post('https://api.greeninvoice.co.il/api/v1/clients', {
         name: `${patient.first_name} ${patient.last_name}`,
-        phone: patient.phone || undefined,
-        emails: patient.email ? [{ email: patient.email }] : []
+        ...(patient.phone ? { phone: patient.phone } : {}),
+        ...(patient.email ? { emails: [patient.email] } : {}),
       }, { headers: { Authorization: `Bearer ${token}` } });
       clientId = clientRes.data.id;
       await db.query('UPDATE patients SET green_invoice_client_id = $1 WHERE id = $2', [clientId, patient.id]);
     }
 
-    const toUnix = d => d ? Math.floor(new Date(d).getTime() / 1000) : undefined;
+    // GI expects dates as YYYY-MM-DD strings
+    const toDateStr = d => {
+      if (!d) return undefined;
+      const dt = new Date(d);
+      if (isNaN(dt)) return undefined;
+      return dt.toISOString().split('T')[0];
+    };
+
     const desc = description || `טיפול פסיכולוגי`;
-    const docVatType = vat_type !== undefined ? Number(vat_type) : 0;
+
+    // vatType mapping: 0=כולל מע"מ (DEFAULT), 1=לא כולל מע"מ (NO_VAT), 2=פטור (EXEMPT)
+    // GI income vatType: 0=DEFAULT, 1=EXEMPT, 2=MIXED
+    const giVatType = vat_type === 2 ? 1 : 0; // פטור ממע"מ → 1 (EXEMPT), otherwise 0 (DEFAULT)
 
     // Build income items — one per session if session_ids provided, else one lump sum
     let incomeItems = [];
@@ -157,25 +167,40 @@ router.post('/preview-document', async (req, res) => {
          WHERE s.id = ANY($1::int[])`, [session_ids]
       );
       incomeItems = sessRes.rows.map(s => {
-        const dateStr = s.session_date ? new Date(s.session_date).toLocaleDateString('he-IL') : '';
-        return { description: `פגישה${dateStr ? ' ' + dateStr : ''}`, price: s.fee || 450, quantity: 1, vatType: docVatType };
+        const dateStr = s.session_date ? s.session_date.slice(0, 10) : '';
+        return {
+          description: `${desc}${dateStr ? ' — ' + dateStr : ''}`,
+          quantity: 1,
+          price: Number(s.fee || amount),
+          currency: 'ILS',
+          vatType: giVatType,
+        };
       });
     }
     if (incomeItems.length === 0) {
-      incomeItems = [{ description: desc, price: Number(amount), quantity: 1, vatType: docVatType }];
+      incomeItems = [{
+        description: desc,
+        quantity: 1,
+        price: Number(amount),
+        currency: 'ILS',
+        vatType: giVatType,
+      }];
     }
 
-    const docRes = await axios.post('https://api.greeninvoice.co.il/api/v1/documents', {
-      type: 300, // חשבונית מס (לתצוגה מקדימה)
+    const docPayload = {
+      type: 300, // חשבונית מס
       lang: 'he',
       currency: 'ILS',
-      vatType: docVatType,
+      vatType: giVatType,
       client: { id: clientId },
       description: desc,
       income: incomeItems,
-      ...(document_date ? { date: toUnix(document_date) } : {}),
-      ...(due_date ? { dueDate: toUnix(due_date) } : {}),
-    }, { headers: { Authorization: `Bearer ${token}` } });
+    };
+    if (document_date) { const d = toDateStr(document_date); if (d) docPayload.date = d; }
+    if (due_date)      { const d = toDateStr(due_date);      if (d) docPayload.dueDate = d; }
+
+    const docRes = await axios.post('https://api.greeninvoice.co.il/api/v1/documents', docPayload,
+      { headers: { Authorization: `Bearer ${token}` } });
 
     const doc = docRes.data;
     const urlObj = doc.url || {};
@@ -184,7 +209,7 @@ router.post('/preview-document', async (req, res) => {
   } catch (err) {
     const giError = err.response?.data;
     console.error('GI preview error:', JSON.stringify(giError || err.message));
-    res.status(500).json({ error: giError?.message || err.message, details: giError });
+    res.status(500).json({ error: giError?.errorMessage || giError?.message || err.message, details: giError });
   }
 });
 
