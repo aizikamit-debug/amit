@@ -129,50 +129,56 @@ router.post('/parse-weekly', async (req, res) => {
     const patientsRes = await db.query(`SELECT id, first_name, last_name FROM patients WHERE status != 'ended'`);
     const allPatients = patientsRes.rows;
 
-    // Detect duplicate first names across ALL patients (week + others)
+    // Per-name duplicate tracking (NOT a global flag — only blocks ambiguous names)
     const firstNameCount = {};
     for (const p of allPatients) {
       const fn = p.first_name.trim();
       firstNameCount[fn] = (firstNameCount[fn] || 0) + 1;
     }
-    const hasDuplicateFirstNames = Object.values(firstNameCount).some(c => c > 1);
+    // Set of first names that belong to more than one patient
+    const duplicateFirstNames = new Set(
+      Object.entries(firstNameCount).filter(([, c]) => c > 1).map(([fn]) => fn)
+    );
 
-    // Build patient list for AI prompt — week sessions first (with date), then rest
-    const weekPatientIds = new Set(weekSessions.map(s => s.patient_id));
     const dayNames = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    const weekPatientIds = new Set(weekSessions.map(s => s.patient_id));
 
-    const weekPatientsContext = weekSessions.map(s => {
+    // Build AI prompt context — ordered week sessions with index numbers
+    const weekPatientsContext = weekSessions.map((s, i) => {
       const date = new Date(s.session_date);
       const day = dayNames[date.getDay()];
       const time = s.session_time ? s.session_time.slice(0, 5) : '';
-      return `${s.first_name} ${s.last_name} (יום ${day}${time ? ' ' + time : ''})`;
+      return `${i + 1}. ${s.first_name.trim()} ${s.last_name.trim()} (יום ${day}${time ? ' ' + time : ''})`;
     }).join('\n');
 
     const otherPatients = allPatients
       .filter(p => !weekPatientIds.has(p.id))
-      .map(p => `${p.first_name} ${p.last_name}`)
+      .map(p => `${p.first_name.trim()} ${p.last_name.trim()}`)
       .join('\n');
 
-    const nameMatchInstruction = hasDuplicateFirstNames
-      ? '- חשוב: יש מטופלים עם שם פרטי זהה — חובה להשתמש בשם פרטי + שם משפחה לזיהוי מדויק'
-      : '- שם פרטי לבד מספיק לזיהוי, אך אם ישנו שם משפחה בתמלול — השתמש בו לוודאות';
+    // Highlight ambiguous names for AI
+    const ambiguousNote = duplicateFirstNames.size > 0
+      ? `שמות פרטיים שמשותפים למספר מטופלים (חובה שם משפחה): ${[...duplicateFirstNames].join(', ')}`
+      : '';
 
-    const prompt = `אתה עוזר לפסיכולוג קליני. יש לך תמלול של מספר פגישות טיפוליות מהשבוע.
+    const prompt = `אתה עוזר לפסיכולוג קליני. יש לך תמלול של פגישות טיפוליות מהשבוע.
 
-מטופלים שהיו השבוע (לפי סדר הפגישות ביומן):
+פגישות השבוע לפי סדר ביומן:
 ${weekPatientsContext || 'אין נתונים מהיומן'}
 
 ${otherPatients ? `מטופלים נוספים במערכת:\n${otherPatients}` : ''}
 
-המשימה: זהה כל מטופל שמוזכר בתמלול לפי שם. פרק את התמלול לסגמנטים לפי מטופל ועבד כל סגמנט לתיעוד קליני קצר ומקצועי בעברית.
+המשימה: זהה כל מטופל שמוזכר בתמלול ופרק אותו לסגמנטים. עבד כל סגמנט לתיעוד קליני קצר ומקצועי בעברית.
 
-חשוב:
-${nameMatchInstruction}
-- בכל מקרה, החזר תמיד שם פרטי + שם משפחה מלא מהרשימה (לא רק שם פרטי)
-- אם מוזכר שם שאינו ברשימות — דלג עליו
-- החזר את הסגמנטים לפי סדר הופעתם בתמלול
+כללי זיהוי:
+- השתמש בסדר הפגישות ביומן כרפרנס — אם מוזכר שם שמתאים לפגישה הבאה בסדר, זהו אותה
+- אם שם פרטי לבד מוזכר (כגון "ערן") וברשימת הפגישות יש רק "ערן מליכ" — זהו אותו
+${ambiguousNote ? `- ${ambiguousNote}` : ''}
+- אם אותו שם מוזכר פעמיים — צור שני סגמנטים נפרדים
+- החזר תמיד שם פרטי + שם משפחה מלא מהרשימה
+- אם שם אינו ברשימות — דלג עליו
 
-החזר JSON בלבד (ללא טקסט נוסף):
+החזר JSON בלבד:
 [{"patient_name": "שם פרטי שם משפחה", "content": "תיעוד מעובד"}]
 
 תמלול:
@@ -189,38 +195,54 @@ ${transcription}`;
     if (!jsonMatch) return res.status(500).json({ error: 'AI לא החזיר פורמט תקין' });
     const segments = JSON.parse(jsonMatch[0]);
 
-    // Match each segment to a patient, annotate with session info
     const dayNames2 = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
+    // matchPatient: per-name duplicate awareness (not global flag)
     const matchPatient = (segName, candidates) => {
       const normSeg = segName.trim().replace(/\s+/g, ' ');
-      // 1. Exact full name match (normalize spaces in both)
-      let match = candidates.find(p =>
-        `${p.first_name.trim()} ${p.last_name.trim()}` === normSeg
-      );
+      // 1. Exact full name
+      let match = candidates.find(p => `${p.first_name.trim()} ${p.last_name.trim()}` === normSeg);
       if (match) return match;
       // 2. Segment contains full name
-      match = candidates.find(p =>
-        normSeg.includes(`${p.first_name.trim()} ${p.last_name.trim()}`)
-      );
+      match = candidates.find(p => normSeg.includes(`${p.first_name.trim()} ${p.last_name.trim()}`));
       if (match) return match;
-      // 3. First name only — only safe if no duplicate first names
-      if (!hasDuplicateFirstNames) {
-        const segFirst = normSeg.split(' ')[0];
-        match = candidates.find(p => p.first_name.trim() === segFirst || normSeg.includes(p.first_name.trim()));
+      // 3. First name only — allowed if this specific first name is NOT duplicated
+      const segFirst = normSeg.split(' ')[0];
+      if (!duplicateFirstNames.has(segFirst)) {
+        match = candidates.find(p => p.first_name.trim() === segFirst);
         if (match) return match;
       }
       return null;
     };
 
+    // Track matched session IDs to handle same patient on multiple days
+    const matchedSessionIds = new Set();
+
     const previews = segments.map(seg => {
-      // Try to find in week sessions first
-      const weekSession = weekSessions.find(s => matchPatient(seg.patient_name, [{ first_name: s.first_name, last_name: s.last_name }]));
+      const normName = seg.patient_name.trim().replace(/\s+/g, ' ');
+      const segFirst = normName.split(' ')[0];
+
+      // 1. Try full-name match in week sessions (skip already matched)
+      let weekSession = weekSessions.find(s =>
+        !matchedSessionIds.has(s.session_id) &&
+        matchPatient(normName, [{ first_name: s.first_name, last_name: s.last_name }])
+      );
+
+      // 2. Positional fallback: if first name matches a week session (even if duplicate),
+      //    pick the next unmatched session with that first name in calendar order
+      if (!weekSession) {
+        weekSession = weekSessions.find(s =>
+          !matchedSessionIds.has(s.session_id) &&
+          s.first_name.trim() === segFirst
+        );
+      }
+
       if (weekSession) {
+        matchedSessionIds.add(weekSession.session_id);
         const date = new Date(weekSession.session_date);
         return {
           ...seg,
-          patient_name: `${weekSession.first_name} ${weekSession.last_name}`,
+          patient_name: `${weekSession.first_name.trim()} ${weekSession.last_name.trim()}`,
           patient_id: weekSession.patient_id,
           session_id: weekSession.session_id,
           matched: true,
@@ -229,20 +251,10 @@ ${transcription}`;
           day_name: dayNames2[date.getDay()]
         };
       }
-      // Fallback: any patient in system
-      const patient = matchPatient(seg.patient_name, allPatients);
-      return { ...seg, patient_id: patient?.id || null, matched: !!patient, session_date: null, day_name: null };
-    });
 
-    // Sort by calendar order: week sessions first (by date/time), then unmatched
-    const sessionOrder = weekSessions.map(s => s.patient_id);
-    previews.sort((a, b) => {
-      const ai = sessionOrder.indexOf(a.patient_id);
-      const bi = sessionOrder.indexOf(b.patient_id);
-      if (ai === -1 && bi === -1) return 0;
-      if (ai === -1) return 1;
-      if (bi === -1) return -1;
-      return ai - bi;
+      // 3. Fallback: search all patients
+      const patient = matchPatient(normName, allPatients);
+      return { ...seg, patient_id: patient?.id || null, matched: !!patient, session_date: null, day_name: null };
     });
 
     res.json({ previews, weekRange: { start: weekStartStr, end: weekEndStr } });
