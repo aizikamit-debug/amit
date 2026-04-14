@@ -193,12 +193,16 @@ ${transcription}`;
     const dayNames2 = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
     const matchPatient = (segName, candidates) => {
-      const normSeg = segName.trim();
-      // 1. Exact full name match
-      let match = candidates.find(p => `${p.first_name} ${p.last_name}`.trim() === normSeg);
+      const normSeg = segName.trim().replace(/\s+/g, ' ');
+      // 1. Exact full name match (normalize spaces in both)
+      let match = candidates.find(p =>
+        `${p.first_name.trim()} ${p.last_name.trim()}` === normSeg
+      );
       if (match) return match;
       // 2. Segment contains full name
-      match = candidates.find(p => normSeg.includes(`${p.first_name} ${p.last_name}`.trim()));
+      match = candidates.find(p =>
+        normSeg.includes(`${p.first_name.trim()} ${p.last_name.trim()}`)
+      );
       if (match) return match;
       // 3. First name only — only safe if no duplicate first names
       if (!hasDuplicateFirstNames) {
@@ -338,18 +342,13 @@ router.post('/split-weekly', async (req, res) => {
       const start = deduped[i].pos;
       const end = i + 1 < deduped.length ? deduped[i + 1].pos : transcription.length;
       const content = transcription.slice(start, end).trim();
-      // De-duplicate: if same patient already added, merge content
-      const existing = segments.find(s => s.patient_id === deduped[i].patient.id);
-      if (existing) {
-        existing.content += '\n\n' + content;
-      } else {
-        segments.push({
-          patient_name: `${deduped[i].patient.first_name} ${deduped[i].patient.last_name}`,
-          patient_id: deduped[i].patient.id,
-          matched: true,
-          content
-        });
-      }
+      // Each mention = separate segment (patient may appear on multiple dates)
+      segments.push({
+        patient_name: `${deduped[i].patient.first_name.trim()} ${deduped[i].patient.last_name.trim()}`,
+        patient_id: deduped[i].patient.id,
+        matched: true,
+        content
+      });
     }
     res.json({ previews: segments });
   } catch (err) {

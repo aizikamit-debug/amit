@@ -3651,6 +3651,20 @@ export default function App() {
   const [patientName, setPatientName] = useState('מטופל');
   const [newPaymentPatientId, setNewPaymentPatientId] = useState(null);
   const now = new Date();
+
+  // Auto-logout after 3 minutes of inactivity
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const TIMEOUT = 3 * 60 * 1000; // 3 minutes
+    let timer = setTimeout(() => {
+      localStorage.removeItem('auth_token');
+      setIsLoggedIn(false);
+    }, TIMEOUT);
+    const reset = () => { clearTimeout(timer); timer = setTimeout(() => { localStorage.removeItem('auth_token'); setIsLoggedIn(false); }, TIMEOUT); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach(e => window.addEventListener(e, reset));
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset)); };
+  }, [isLoggedIn]);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
 
