@@ -166,7 +166,7 @@ router.post('/preview-document', async (req, res) => {
     }
 
     const docRes = await axios.post('https://api.greeninvoice.co.il/api/v1/documents', {
-      type: 320, // חשבון עסקה
+      type: 300, // חשבונית מס (לתצוגה מקדימה)
       lang: 'he',
       currency: 'ILS',
       vatType: docVatType,
