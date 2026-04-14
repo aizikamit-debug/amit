@@ -670,4 +670,38 @@ router.get('/:id/morning-status', async (req, res) => {
   }
 });
 
+// Search GI documents by client name
+router.get('/gi-search', async (req, res) => {
+  const db = req.app.locals.db;
+  const { name } = req.query;
+  try {
+    const token = await getGreenInvoiceToken(db);
+    const r = await axios.get('https://api.greeninvoice.co.il/api/v1/documents', {
+      params: { limit: 20, sort: 'createdAt', order: 'desc' },
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const docs = (r.data.items || r.data || []);
+    const filtered = name ? docs.filter(d =>
+      (d.client?.name || '').includes(name) || (d.description || '').includes(name)
+    ) : docs;
+    res.json(filtered.map(d => ({ id: d.id, type: d.type, client: d.client?.name, total: d.total, date: d.date, status: d.status })));
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
+// Cancel a GI document by ID
+router.delete('/gi-document/:docId', async (req, res) => {
+  const db = req.app.locals.db;
+  const { docId } = req.params;
+  try {
+    const token = await getGreenInvoiceToken(db);
+    await axios.delete(`https://api.greeninvoice.co.il/api/v1/documents/${docId}`,
+      { headers: { Authorization: `Bearer ${token}` } });
+    res.json({ success: true, cancelled: docId });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
 module.exports = router;

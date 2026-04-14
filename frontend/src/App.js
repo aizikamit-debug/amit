@@ -2670,9 +2670,7 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
   const [vatType, setVatType] = useState(2); // 0=פטור, 1=לא כולל מע"מ, 2=כולל מע"מ
   const [documentDate, setDocumentDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
-  const [previewDocId, setPreviewDocId] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
@@ -2716,27 +2714,10 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
     `${p.first_name} ${p.last_name}`.includes(patientSearch) || !patientSearch
   );
 
-  const handlePreview = async () => {
+  const handlePreview = () => {
     if (!patientId || !amount) { setError('בחר מטופל וסכום תחילה'); return; }
-    setPreviewLoading(true); setError('');
-    try {
-      const r = await billingAPI.previewDocument({
-        patient_id: patientId,
-        amount: Number(amount),
-        description: description || undefined,
-        vat_type: vatType,
-        document_date: documentDate,
-        due_date: dueDate || undefined,
-        session_ids: Array.from(selectedSessions),
-      });
-      setPreviewDocId(r.data.doc_id);
-      setPreviewUrl(r.data.url || null);
-      if (!r.data.url) setError('המסמך נוצר אבל לא התקבל URL לתצוגה מקדימה');
-    } catch (e) {
-      setError(e.response?.data?.error || 'שגיאה ביצירת תצוגה מקדימה');
-    } finally {
-      setPreviewLoading(false);
-    }
+    setError('');
+    setShowPreviewModal(true);
   };
 
   const handleSendWa = async () => {
@@ -2773,7 +2754,6 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
         vat_type: vatType,
         document_date: documentDate,
         due_date: dueDate || undefined,
-        preview_doc_id: previewDocId || undefined,
       });
       setSuccess('✅ חיוב נשמר בהצלחה!');
       setTimeout(() => { if (onSaved) onSaved(); if (onBack) onBack(); }, 1500);
@@ -2967,28 +2947,79 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
                 </div>
               </div>
 
-              {/* Green Invoice Preview button */}
+              {/* Local preview button — no GI document created */}
               <div style={{ marginBottom: 14 }}>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={handlePreview}
-                  disabled={previewLoading || !patientId || !amount}
+                  disabled={!patientId || !amount}
                   style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  {previewLoading ? '⏳ יוצר מסמך...' : '👁 תצוגה מקדימה בחשבונית ירוקה'}
+                  👁 תצוגה מקדימה
                 </button>
-                {previewUrl && (
-                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <a href={previewUrl} target="_blank" rel="noopener noreferrer"
-                      className="btn btn-sm"
-                      style={{ background: '#16a34a', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                      📄 פתח תצוגה מקדימה
-                    </a>
-                    <span style={{ fontSize: 11.5, color: '#16a34a' }}>✓ לחיצה על "שמור" תקשר את המסמך לרשומה</span>
-                  </div>
-                )}
               </div>
+
+              {/* Local preview modal */}
+              {showPreviewModal && (() => {
+                const pat = selectedPatient;
+                const vatLabels = ['כולל מע"מ 18%', 'לא כולל מע"מ', 'פטור ממע"מ'];
+                const numAmount = Number(amount);
+                const vatAmount = vatType === 0 ? Math.round(numAmount * 18 / 118 * 100) / 100 : 0;
+                const baseAmount = vatType === 0 ? Math.round((numAmount - vatAmount) * 100) / 100 : numAmount;
+                const selSessions = patientSessions.filter(s => selectedSessions.has(s.id));
+                return (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    onClick={() => setShowPreviewModal(false)}>
+                    <div style={{ background: '#fff', borderRadius: 12, padding: 32, maxWidth: 480, width: '90%', direction: 'rtl', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+                      onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                        <h3 style={{ margin: 0, fontSize: 18, color: '#1e293b' }}>תצוגה מקדימה — חשבונית מס/קבלה</h3>
+                        <button onClick={() => setShowPreviewModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b' }}>✕</button>
+                      </div>
+                      <div style={{ borderTop: '2px solid #6366f1', paddingTop: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ color: '#64748b', fontSize: 13 }}>לכבוד</span>
+                          <span style={{ fontWeight: 600 }}>{pat ? `${pat.first_name} ${pat.last_name}` : ''}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ color: '#64748b', fontSize: 13 }}>תאריך מסמך</span>
+                          <span>{documentDate || '—'}</span>
+                        </div>
+                        {dueDate && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                          <span style={{ color: '#64748b', fontSize: 13 }}>תאריך ביצוע תשלום</span>
+                          <span>{dueDate}</span>
+                        </div>}
+                        <div style={{ borderTop: '1px solid #e2e8f0', margin: '12px 0', paddingTop: 12 }}>
+                          {selSessions.length > 0 ? selSessions.map(s => (
+                            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
+                              <span>{description || 'טיפול פסיכולוגי'} — {s.session_date?.slice(0,10)}</span>
+                              <span>₪{s.fee || amount}</span>
+                            </div>
+                          )) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
+                              <span>{description || 'טיפול פסיכולוגי'}</span>
+                              <span>₪{baseAmount}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+                          {vatType === 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13, color: '#64748b' }}>
+                            <span>מע"מ 18%</span><span>₪{vatAmount}</span>
+                          </div>}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 16 }}>
+                            <span>סה"כ לתשלום</span><span style={{ color: '#6366f1' }}>₪{numAmount}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{vatLabels[vatType]}</div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 20, background: '#f0fdf4', borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: '#16a34a' }}>
+                        ✓ המסמך יווצר בחשבונית ירוקה כאשר תלחץ על "שמור תשלום"
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div style={{ fontSize: 12.5, color: '#6366f1', background: 'rgba(99,102,241,0.06)', borderRadius: 8, padding: '10px 14px', border: '1px solid rgba(99,102,241,0.15)' }}>
                 💡 תיווצר חשבונית בחשבונית ירוקה (Morning) ודף תשלום יישלח בעת השמירה
