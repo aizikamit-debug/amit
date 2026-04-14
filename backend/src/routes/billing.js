@@ -43,7 +43,7 @@ async function getGreenInvoiceToken(db) {
 }
 
 // Create a Green Invoice payment page link (דף תשלום)
-async function createPaymentLink(db, patientName, amount, description, vatType = 0) {
+async function createPaymentLink(db, patientName, amount, description, vatType = 0, documentDate = null, dueDate = null) {
   const token = await getGreenInvoiceToken(db);
 
   // Get plugin ID from existing payment links (payment terminal)
@@ -58,6 +58,9 @@ async function createPaymentLink(db, patientName, amount, description, vatType =
   }
   if (!pluginId) throw new Error('לא נמצא מסוף סליקה — צור לינק תשלום אחד ידנית בחשבונית ירוקה תחילה');
 
+  // Convert dates to Unix timestamps (seconds) if provided
+  const toUnix = d => d ? Math.floor(new Date(d).getTime() / 1000) : undefined;
+
   const res = await axios.post('https://api.greeninvoice.co.il/api/v1/payments/links', {
     type: 0,
     description,
@@ -67,6 +70,8 @@ async function createPaymentLink(db, patientName, amount, description, vatType =
     lang: 'he',
     documentType: 320,
     documentVatType: vatType,
+    ...(documentDate ? { date: toUnix(documentDate) } : {}),
+    ...(dueDate ? { dueDate: toUnix(dueDate) } : {}),
     plugins: [
       { id: pluginId, type: 12200, maxPayments: 1, group: 120 },  // כרטיס אשראי — תשלום אחד
       { id: pluginId, type: 12200, maxPayments: 5, group: 150 },  // כרטיס אשראי — עד 5 תשלומים
@@ -312,7 +317,8 @@ router.post('/manual-create', async (req, res) => {
   const db = req.app.locals.db;
   const {
     patient_id, session_ids, amount, date, description,
-    payment_method, payment_status, invoice_action, invoice_number, vat_type
+    payment_method, payment_status, invoice_action, invoice_number, vat_type,
+    document_date, due_date
   } = req.body;
 
   if (!patient_id || !amount) return res.status(400).json({ error: 'patient_id ו-amount חובה' });
@@ -360,7 +366,7 @@ router.post('/manual-create', async (req, res) => {
         const patientName = `${patient.first_name} ${patient.last_name}`;
         const desc = description || `טיפול פסיכולוגי — ${sessionCount || 1} פגישות`;
         const docVatType = vat_type !== undefined ? Number(vat_type) : 0;
-        const { link_id, payment_link } = await createPaymentLink(db, patientName, amount, desc, docVatType);
+        const { link_id, payment_link } = await createPaymentLink(db, patientName, amount, desc, docVatType, document_date, due_date);
         paymentLink = payment_link;
         await db.query(
           'UPDATE billing_records SET payment_link=$1, green_invoice_doc_id=$2 WHERE id=$3',
