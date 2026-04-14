@@ -468,6 +468,10 @@ function WeeklyTranscription() {
     setSaving(false);
   };
 
+  const toggleMatch = (i) => {
+    setPreviews(prev => prev.map((p, idx) => idx === i ? { ...p, matched: !p.matched } : p));
+  };
+
   const doSave = async () => {
     const toSave = previews.filter(p => p.patient_id && p.matched);
     if (!toSave.length) return;
@@ -502,7 +506,8 @@ function WeeklyTranscription() {
               <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 0.3 }}>📅 פגישות השבוע</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {weekSessions.map((s, i) => {
-                  const d = new Date(s.session_date);
+                  const [sy, sm, sd] = s.session_date.slice(0, 10).split('-').map(Number);
+                  const d = new Date(sy, sm - 1, sd);
                   const dayHe = DAY_NAMES_HE[d.getDay()];
                   const dateStr = d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' });
                   const timeStr = s.session_time ? s.session_time.slice(0, 5) : '';
@@ -580,15 +585,16 @@ function WeeklyTranscription() {
               : previews.map((p, i) => (
               <div key={i} style={{
                 padding: '10px 14px', borderRadius: 10, marginBottom: 8,
-                background: p.matched ? 'var(--page-bg)' : '#fff1f2',
-                border: `1px solid ${p.matched ? 'var(--border)' : '#fecaca'}`
+                background: !p.matched ? '#fff1f2' : p.patient_id ? 'var(--page-bg)' : '#fffbeb',
+                border: `1px solid ${!p.matched ? '#fecaca' : p.patient_id ? 'var(--border)' : '#fde68a'}`,
+                opacity: p.patient_id && !p.matched ? 0.6 : 1
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 5 }}>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 700, fontSize: 13.5 }}>{p.patient_name}</span>
-                    {p.day_name && (
+                    {p.day_name && p.matched && (
                       <span style={{
-                        marginRight: 8, fontSize: 11, color: 'var(--primary)',
+                        fontSize: 11, color: 'var(--primary)',
                         background: 'var(--primary-light, #ede9fe)', borderRadius: 6,
                         padding: '1px 7px', fontWeight: 500
                       }}>
@@ -597,12 +603,29 @@ function WeeklyTranscription() {
                       </span>
                     )}
                   </div>
-                  {!p.matched
-                    ? <span style={{ fontSize: 11, color: 'var(--danger)' }}>לא זוהה</span>
-                    : p.day_name
-                      ? <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ פגישה השבוע</span>
-                      : <span style={{ fontSize: 11, color: 'var(--success)' }}>✓ זוהה</span>
-                  }
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {!p.patient_id
+                      ? <span style={{ fontSize: 11, color: 'var(--danger)' }}>לא זוהה במערכת</span>
+                      : p.matched
+                        ? <span style={{ fontSize: 11, color: 'var(--success)' }}>
+                            {p.day_name ? '✓ פגישה השבוע' : '✓ זוהה'}
+                          </span>
+                        : <span style={{ fontSize: 11, color: '#b45309' }}>⚬ מבוטל ידנית</span>
+                    }
+                    {p.patient_id && (
+                      <button
+                        onClick={() => toggleMatch(i)}
+                        title={p.matched ? 'בטל זיהוי — לא יישמר' : 'שחזר זיהוי'}
+                        style={{
+                          border: 'none', cursor: 'pointer', borderRadius: 5, fontSize: 11, padding: '2px 7px',
+                          background: p.matched ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.15)',
+                          color: p.matched ? '#dc2626' : '#16a34a', fontWeight: 600
+                        }}
+                      >
+                        {p.matched ? '✕ בטל' : '✓ שחזר'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{p.content}</div>
               </div>
@@ -830,7 +853,8 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [summary, setSummary] = useState(null);
-  const [weekChanges, setWeekChanges] = useState([]);
+  const [weekCancelled, setWeekCancelled] = useState([]);
+  const [weekRescheduled, setWeekRescheduled] = useState([]);
   const now = new Date();
   const [summaryMonth, setSummaryMonth] = useState(initMonth || now.getMonth() + 1);
   const [summaryYear, setSummaryYear] = useState(initYear || now.getFullYear());
@@ -879,7 +903,8 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
     dashboardAPI.get({ month: summaryMonth, year: summaryYear })
       .then(r => {
         setSummary(r.data);
-        setWeekChanges(r.data?.week_changes || []);
+        setWeekCancelled(r.data?.week_cancelled || []);
+        setWeekRescheduled(r.data?.week_rescheduled || []);
         setUnpaid((r.data?.unpaid_billing || []).map(b => ({
           patient_name: `${b.first_name} ${b.last_name}`,
           amount: b.amount
@@ -966,10 +991,10 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
           {weekDays.map((d, i) => {
             const dateStr = localDateStr(d);
             const isToday = dateStr === today;
-            // Compare using local date of the session (parse ISO string to local)
+            // Compare date strings directly to avoid timezone shifts
             const daySessions = weekSessions.filter(s => {
               if (!s.session_date) return false;
-              return localDateStr(new Date(s.session_date)) === dateStr;
+              return s.session_date.slice(0, 10) === dateStr;
             });
             return (
               <div key={i} style={{
@@ -1091,25 +1116,49 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
         </div>
       </div>
 
-      {/* ── WEEK CHANGES ── */}
-      {weekChanges.length > 0 && (
-        <div className="card card-sm" style={{ marginBottom: 16, borderRight: '3px solid #f59e0b' }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: '#b45309' }}>
-            ⚠️ שינויים השבוע ({weekChanges.length})
+      {/* ── WEEK CHANGES: CANCELLED ── */}
+      {weekCancelled.length > 0 && (
+        <div className="card card-sm" style={{ marginBottom: 12, borderRight: '3px solid #ef4444' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: '#dc2626' }}>
+            ❌ ביטולים השבוע ({weekCancelled.length})
           </div>
-          {weekChanges.map(s => {
+          {weekCancelled.map(s => {
             const dateStr = s.session_date ? new Date(s.session_date).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' }) : '';
             const timeStr = s.session_time ? s.session_time.slice(0, 5) : '';
             const statusMap = { cancelled: 'בוטל', no_show: 'לא הגיע' };
             return (
               <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-                <span style={{ fontWeight: 500 }}>{s.first_name} {s.last_name}</span>
+                <span style={{ fontWeight: 600 }}>{s.first_name} {s.last_name}</span>
                 <span style={{ color: 'var(--text-muted)' }}>{dateStr}{timeStr ? ` · ${timeStr}` : ''}</span>
                 <span style={{
-                  background: s.status === 'cancelled' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-                  color: s.status === 'cancelled' ? '#dc2626' : '#b45309',
+                  background: s.status === 'no_show' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                  color: s.status === 'no_show' ? '#b45309' : '#dc2626',
                   borderRadius: 6, padding: '2px 8px', fontSize: 12, fontWeight: 600
                 }}>{statusMap[s.status] || s.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── WEEK CHANGES: RESCHEDULED ── */}
+      {weekRescheduled.length > 0 && (
+        <div className="card card-sm" style={{ marginBottom: 12, borderRight: '3px solid #f59e0b' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: '#b45309' }}>
+            🔄 הזזות השבוע ({weekRescheduled.length})
+          </div>
+          {weekRescheduled.map(s => {
+            const origDateStr = s.original_session_date ? new Date(s.original_session_date).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' }) : '';
+            const origTimeStr = s.original_session_time ? s.original_session_time.slice(0, 5) : '';
+            const newDateStr = s.session_date ? new Date(s.session_date).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' }) : '';
+            const newTimeStr = s.session_time ? s.session_time.slice(0, 5) : '';
+            return (
+              <div key={s.id} style={{ padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                <div style={{ fontWeight: 600, marginBottom: 3 }}>{s.first_name} {s.last_name}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                  <span style={{ textDecoration: 'line-through', marginLeft: 6 }}>{origDateStr}{origTimeStr ? ` ${origTimeStr}` : ''}</span>
+                  <span style={{ color: '#2563eb' }}>← {newDateStr}{newTimeStr ? ` ${newTimeStr}` : ''}</span>
+                </div>
               </div>
             );
           })}
@@ -1467,7 +1516,9 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
   const [intakeLoading, setIntakeLoading] = useState(false);
 
   const [showNoteForm, setShowNoteForm] = useState(false);
-  const [noteText, setNoteText] = useState('');
+  const DRAFT_KEY = `note_draft_${patientId}`;
+  const [noteText, setNoteText] = useState(() => localStorage.getItem(DRAFT_KEY) || '');
+  const [noteDraftSavedAt, setNoteDraftSavedAt] = useState(null);
   const [noteType, setNoteType] = useState('session');
   const [isRecording, setIsRecording] = useState(false);
   const [recognition, setRecognition] = useState(null);
@@ -1510,6 +1561,16 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
       intakeAPI.getVersions(patientId).then(r => setIntakeVersions(r.data)).catch(() => {});
     }
   }, [tab, patientId]);
+
+  // Auto-save note draft to localStorage every 5 seconds while typing
+  useEffect(() => {
+    if (!noteText) return;
+    const timer = setTimeout(() => {
+      localStorage.setItem(DRAFT_KEY, noteText);
+      setNoteDraftSavedAt(new Date());
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [noteText, DRAFT_KEY]);
 
   const startRecording = async () => {
     try {
@@ -1556,7 +1617,8 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
         await notesAPI.processWithAI(res.data.id);
         setProcessingId(null);
       }
-      setNoteText(''); setShowNoteForm(false);
+      localStorage.removeItem(DRAFT_KEY);
+      setNoteText(''); setNoteDraftSavedAt(null); setShowNoteForm(false);
       notesAPI.getAll(patientId).then(r => setNotes(r.data));
     } catch (e) { alert('שגיאה בשמירה'); }
   };
@@ -2138,7 +2200,15 @@ function PatientDetail({ patientId, onBack, onLoad, onNewPayment }) {
                 </button>
               </div>
               {isRecording && <div className="recording-indicator"><span className="rec-dot"/> מקליט... דבר עכשיו</div>}
-              <textarea rows={5} placeholder="כתוב או הקלט תיעוד כאן..." value={noteText} onChange={e => setNoteText(e.target.value)} style={{ marginBottom: 10 }}/>
+              <textarea rows={5} placeholder="כתוב או הקלט תיעוד כאן..." value={noteText} onChange={e => setNoteText(e.target.value)} style={{ marginBottom: 6 }}/>
+              {noteDraftSavedAt && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'left', marginBottom: 8 }}>
+                  💾 טיוטה נשמרה אוטומטית ב-{noteDraftSavedAt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </div>
+              )}
+              {!noteDraftSavedAt && localStorage.getItem(DRAFT_KEY) && noteText && (
+                <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⏳ שומר טיוטה...</div>
+              )}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary btn-xs" onClick={() => { setShowNoteForm(false); setNoteText(''); }}>ביטול</button>
                 <button className="btn btn-ghost btn-xs" onClick={() => saveNote(false)} disabled={!noteText.trim()}>{Icon.check(13)} שמור</button>
@@ -2598,6 +2668,10 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
   const [invoiceAction, setInvoiceAction] = useState('create');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [vatType, setVatType] = useState(2); // 0=פטור, 1=לא כולל מע"מ, 2=כולל מע"מ
+  const [documentDate, setDocumentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState('');
+  const [previewDocId, setPreviewDocId] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
@@ -2641,6 +2715,29 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
     `${p.first_name} ${p.last_name}`.includes(patientSearch) || !patientSearch
   );
 
+  const handlePreview = async () => {
+    if (!patientId || !amount) { setError('בחר מטופל וסכום תחילה'); return; }
+    setPreviewLoading(true); setError('');
+    try {
+      const r = await billingAPI.previewDocument({
+        patient_id: patientId,
+        amount: Number(amount),
+        description: description || undefined,
+        vat_type: vatType,
+        document_date: documentDate,
+        due_date: dueDate || undefined,
+        session_ids: Array.from(selectedSessions),
+      });
+      setPreviewDocId(r.data.doc_id);
+      if (r.data.url) window.open(r.data.url, '_blank');
+      else setError('המסמך נוצר אבל לא התקבל URL לתצוגה מקדימה');
+    } catch (e) {
+      setError(e.response?.data?.error || 'שגיאה ביצירת תצוגה מקדימה');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleSendWa = async () => {
     if (!selectedPatient) { setError('בחר מטופל תחילה'); return; }
     if (!selectedPatient.phone) { setError('אין מספר טלפון למטופל זה'); return; }
@@ -2673,6 +2770,9 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
         invoice_action: invoiceAction,
         invoice_number: invoiceNumber,
         vat_type: vatType,
+        document_date: documentDate,
+        due_date: dueDate || undefined,
+        preview_doc_id: previewDocId || undefined,
       });
       setSuccess('✅ חיוב נשמר בהצלחה!');
       setTimeout(() => { if (onSaved) onSaved(); if (onBack) onBack(); }, 1500);
@@ -2833,6 +2933,18 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
 
           {invoiceAction === 'create' && (
             <>
+              {/* Document date + Due date */}
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+                <div className="input-wrap" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
+                  <label className="input-label">תאריך המסמך</label>
+                  <input type="date" value={documentDate} onChange={e => setDocumentDate(e.target.value)} style={{ maxWidth: 180 }}/>
+                </div>
+                <div className="input-wrap" style={{ flex: 1, minWidth: 160, marginBottom: 0 }}>
+                  <label className="input-label">תאריך ביצוע התשלום <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(אופציונלי)</span></label>
+                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ maxWidth: 180 }}/>
+                </div>
+              </div>
+
               {/* VAT option */}
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 500 }}>מע"מ</div>
@@ -2853,6 +2965,25 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
                   ))}
                 </div>
               </div>
+
+              {/* Green Invoice Preview button */}
+              <div style={{ marginBottom: 14 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={handlePreview}
+                  disabled={previewLoading || !patientId || !amount}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {previewLoading ? '⏳ יוצר מסמך...' : previewDocId ? '✅ תצוגה מקדימה נוצרה — פתח שוב' : '👁 תצוגה מקדימה בחשבונית ירוקה'}
+                </button>
+                {previewDocId && (
+                  <div style={{ fontSize: 11.5, color: '#16a34a', marginTop: 6 }}>
+                    ✓ המסמך נוצר בחשבונית ירוקה (מזהה: {previewDocId}) — לחיצה על "שמור" תקשר אותו לרשומה
+                  </div>
+                )}
+              </div>
+
               <div style={{ fontSize: 12.5, color: '#6366f1', background: 'rgba(99,102,241,0.06)', borderRadius: 8, padding: '10px 14px', border: '1px solid rgba(99,102,241,0.15)' }}>
                 💡 תיווצר חשבונית בחשבונית ירוקה (Morning) ודף תשלום יישלח בעת השמירה
               </div>
@@ -3339,6 +3470,34 @@ function Settings() {
             </div>
           )}
         </div>
+
+        {/* ── BACKUP SECTION ── */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20, marginTop: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>גיבוי נתונים</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 14 }}>
+            גיבוי אוטומטי יומי מתבצע ב-02:00. ניתן להוריד גיבוי ידני בכל עת.
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <a
+              href={`${process.env.REACT_APP_API_URL || '/api'}/backup/download`}
+              download
+              className="btn btn-primary btn-sm"
+              style={{ textDecoration: 'none' }}
+            >
+              💾 הורד גיבוי עכשיו
+            </a>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => fetch(`${process.env.REACT_APP_API_URL || '/api'}/backup/run`)
+                .then(r => r.json())
+                .then(d => alert(`✅ גיבוי בוצע: ${d.filename || 'הצלחה'}\n${d.patients} מטופלים · ${d.sessions} פגישות`))
+                .catch(() => alert('שגיאה בגיבוי'))}
+            >
+              🔄 הפעל גיבוי ידני
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );

@@ -182,7 +182,9 @@ router.post('/preview-document', async (req, res) => {
     const previewUrl = urlObj.he || urlObj.origin || null;
     res.json({ doc_id: doc.id, url: previewUrl });
   } catch (err) {
-    res.status(500).json({ error: err.response?.data?.message || err.message });
+    const giError = err.response?.data;
+    console.error('GI preview error:', JSON.stringify(giError || err.message));
+    res.status(500).json({ error: giError?.message || err.message, details: giError });
   }
 });
 
