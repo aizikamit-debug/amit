@@ -167,7 +167,7 @@ router.post('/preview-document', async (req, res) => {
          WHERE s.id = ANY($1::int[])`, [session_ids]
       );
       incomeItems = sessRes.rows.map(s => {
-        const dateStr = s.session_date ? s.session_date.slice(0, 10) : '';
+        const dateStr = s.session_date ? new Date(s.session_date).toISOString().slice(0, 10) : '';
         return {
           description: `${desc}${dateStr ? ' — ' + dateStr : ''}`,
           quantity: 1,
