@@ -2671,6 +2671,7 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
   const [documentDate, setDocumentDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
   const [previewDocId, setPreviewDocId] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2729,8 +2730,8 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
         session_ids: Array.from(selectedSessions),
       });
       setPreviewDocId(r.data.doc_id);
-      if (r.data.url) window.open(r.data.url, '_blank');
-      else setError('המסמך נוצר אבל לא התקבל URL לתצוגה מקדימה');
+      setPreviewUrl(r.data.url || null);
+      if (!r.data.url) setError('המסמך נוצר אבל לא התקבל URL לתצוגה מקדימה');
     } catch (e) {
       setError(e.response?.data?.error || 'שגיאה ביצירת תצוגה מקדימה');
     } finally {
@@ -2975,11 +2976,16 @@ function NewPaymentPage({ onBack, onSaved, initialPatientId }) {
                   disabled={previewLoading || !patientId || !amount}
                   style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  {previewLoading ? '⏳ יוצר מסמך...' : previewDocId ? '✅ תצוגה מקדימה נוצרה — פתח שוב' : '👁 תצוגה מקדימה בחשבונית ירוקה'}
+                  {previewLoading ? '⏳ יוצר מסמך...' : '👁 תצוגה מקדימה בחשבונית ירוקה'}
                 </button>
-                {previewDocId && (
-                  <div style={{ fontSize: 11.5, color: '#16a34a', marginTop: 6 }}>
-                    ✓ המסמך נוצר בחשבונית ירוקה (מזהה: {previewDocId}) — לחיצה על "שמור" תקשר אותו לרשומה
+                {previewUrl && (
+                  <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <a href={previewUrl} target="_blank" rel="noopener noreferrer"
+                      className="btn btn-sm"
+                      style={{ background: '#16a34a', color: '#fff', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      📄 פתח תצוגה מקדימה
+                    </a>
+                    <span style={{ fontSize: 11.5, color: '#16a34a' }}>✓ לחיצה על "שמור" תקשר את המסמך לרשומה</span>
                   </div>
                 )}
               </div>

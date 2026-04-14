@@ -187,14 +187,21 @@ router.post('/preview-document', async (req, res) => {
       }];
     }
 
+    const today = new Date().toISOString().split('T')[0];
     const docPayload = {
-      type: 300, // חשבונית מס
+      type: 305, // חשבונית מס/קבלה
       lang: 'he',
       currency: 'ILS',
       vatType: giVatType,
       client: { id: clientId },
       description: desc,
       income: incomeItems,
+      payment: [{
+        type: -1, // unpaid — placeholder לתצוגה מקדימה
+        price: Number(amount),
+        currency: 'ILS',
+        date: toDateStr(document_date) || today,
+      }],
     };
     if (document_date) { const d = toDateStr(document_date); if (d) docPayload.date = d; }
     if (due_date)      { const d = toDateStr(due_date);      if (d) docPayload.dueDate = d; }
