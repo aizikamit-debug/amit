@@ -676,10 +676,9 @@ router.get('/gi-search', async (req, res) => {
   const { name } = req.query;
   try {
     const token = await getGreenInvoiceToken(db);
-    const r = await axios.get('https://api.greeninvoice.co.il/api/v1/documents', {
-      params: { limit: 20, sort: 'createdAt', order: 'desc' },
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const r = await axios.post('https://api.greeninvoice.co.il/api/v1/documents/search', {
+      pageSize: 20, sort: 'createdAt', order: 'desc'
+    }, { headers: { Authorization: `Bearer ${token}` } });
     const docs = (r.data.items || r.data || []);
     const filtered = name ? docs.filter(d =>
       (d.client?.name || '').includes(name) || (d.description || '').includes(name)
