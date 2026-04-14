@@ -188,7 +188,7 @@ router.get('/events-debug', async (req, res) => {
     const auth = await getAuthorizedClient(db);
     if (!auth) return res.status(401).json({ error: 'לא מחובר' });
     const calRow = await db.query("SELECT value FROM settings WHERE key = 'google_calendar_id'");
-    const calendarId = calRow.rows[0]?.value?.trim() || 'primary';
+    const calendarId = req.query.calendar_id || calRow.rows[0]?.value?.trim() || 'primary';
     const cal = google.calendar({ version: 'v3', auth });
 
     const { rows: patients } = await db.query("SELECT id, first_name, last_name FROM patients WHERE status != 'ended'");
