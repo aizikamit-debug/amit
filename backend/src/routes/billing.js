@@ -690,16 +690,29 @@ router.get('/gi-search', async (req, res) => {
 });
 
 // Cancel a GI document by ID
-router.delete('/gi-document/:docId', async (req, res) => {
+router.post('/gi-cancel/:docId', async (req, res) => {
   const db = req.app.locals.db;
   const { docId } = req.params;
   try {
     const token = await getGreenInvoiceToken(db);
-    await axios.delete(`https://api.greeninvoice.co.il/api/v1/documents/${docId}`,
+    // Try GI cancel endpoint
+    const r = await axios.put(`https://api.greeninvoice.co.il/api/v1/documents/${docId}`,
+      { cancelled: true },
       { headers: { Authorization: `Bearer ${token}` } });
-    res.json({ success: true, cancelled: docId });
+    res.json({ success: true, data: r.data });
   } catch (err) {
-    res.status(500).json({ error: err.response?.data || err.message });
+    // Try alternative cancel endpoint
+    try {
+      const token2 = await getGreenInvoiceToken(db);
+      const r2 = await axios.post(`https://api.greeninvoice.co.il/api/v1/documents/${docId}/cancel`,
+        {}, { headers: { Authorization: `Bearer ${token2}` } });
+      res.json({ success: true, data: r2.data });
+    } catch (err2) {
+      res.status(500).json({
+        put_error: err.response?.data || err.message,
+        post_error: err2.response?.data || err2.message
+      });
+    }
   }
 });
 
