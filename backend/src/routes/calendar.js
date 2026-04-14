@@ -181,6 +181,44 @@ router.get('/webhook/status', async (req, res) => {
   }
 });
 
+// ─── Debug: list raw calendar events (no import) ─────────────────────────────
+router.get('/events-debug', async (req, res) => {
+  const db = req.app.locals.db;
+  try {
+    const auth = await getAuthorizedClient(db);
+    if (!auth) return res.status(401).json({ error: 'לא מחובר' });
+    const calRow = await db.query("SELECT value FROM settings WHERE key = 'google_calendar_id'");
+    const calendarId = calRow.rows[0]?.value?.trim() || 'primary';
+    const cal = google.calendar({ version: 'v3', auth });
+
+    const { rows: patients } = await db.query("SELECT id, first_name, last_name FROM patients WHERE status != 'ended'");
+    const firstNameCount = {};
+    for (const p of patients) { const fn = p.first_name.toLowerCase(); firstNameCount[fn] = (firstNameCount[fn]||0)+1; }
+
+    const from = req.query.from || new Date().toISOString().split('T')[0];
+    const to = req.query.to || from;
+    const timeMin = new Date(from + 'T00:00:00+03:00');
+    const timeMax = new Date(to + 'T23:59:59+03:00');
+
+    const resp = await cal.events.list({ calendarId, timeMin: timeMin.toISOString(), timeMax: timeMax.toISOString(), singleEvents: true, orderBy: 'startTime', maxResults: 100 });
+    const events = (resp.data.items || []).map(ev => {
+      const title = (ev.summary || '').trim();
+      const titleLow = title.toLowerCase();
+      let matched = patients.find(p => { const f=p.first_name.toLowerCase(), l=p.last_name.toLowerCase(); return titleLow.includes(`${f} ${l}`) || titleLow.includes(`${l} ${f}`) || (titleLow.includes(f) && titleLow.includes(l)); });
+      let matchReason = matched ? 'full_name' : null;
+      if (!matched) {
+        const byFirst = patients.filter(p => titleLow.includes(p.first_name.toLowerCase()));
+        if (byFirst.length === 1) { matched = byFirst[0]; matchReason = 'first_name_unique'; }
+        else if (byFirst.length > 1) matchReason = `ambiguous_first_name: ${byFirst.map(p=>p.first_name+' '+p.last_name).join(', ')}`;
+      }
+      return { id: ev.id, title, start: ev.start?.dateTime || ev.start?.date, matched_patient: matched ? `${matched.first_name} ${matched.last_name}` : null, match_reason: matchReason || 'no_match' };
+    });
+    res.json({ calendar_id: calendarId, date_range: { from, to }, events });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Disconnect ───────────────────────────────────────────────────────────────
 router.post('/disconnect', async (req, res) => {
   const db = req.app.locals.db;
