@@ -122,6 +122,70 @@ async function sendPaymentRequest(db, patient, amount, description) {
   return { doc_id: docRes.data.id, payment_link };
 }
 
+// POST preview — create a real GI document and return its URL (don't save billing record yet)
+router.post('/preview-document', async (req, res) => {
+  const db = req.app.locals.db;
+  const { patient_id, amount, description, vat_type, document_date, due_date, session_ids } = req.body;
+  if (!patient_id || !amount) return res.status(400).json({ error: 'patient_id ו-amount חובה' });
+  try {
+    const token = await getGreenInvoiceToken(db);
+    const patientRow = await db.query('SELECT * FROM patients WHERE id = $1', [patient_id]);
+    if (!patientRow.rows.length) return res.status(404).json({ error: 'מטופל לא נמצא' });
+    const patient = patientRow.rows[0];
+
+    // Ensure client exists in Green Invoice
+    let clientId = patient.green_invoice_client_id;
+    if (!clientId) {
+      const clientRes = await axios.post('https://api.greeninvoice.co.il/api/v1/clients', {
+        name: `${patient.first_name} ${patient.last_name}`,
+        phone: patient.phone || undefined,
+        emails: patient.email ? [{ email: patient.email }] : []
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      clientId = clientRes.data.id;
+      await db.query('UPDATE patients SET green_invoice_client_id = $1 WHERE id = $2', [clientId, patient.id]);
+    }
+
+    const toUnix = d => d ? Math.floor(new Date(d).getTime() / 1000) : undefined;
+    const desc = description || `טיפול פסיכולוגי`;
+    const docVatType = vat_type !== undefined ? Number(vat_type) : 0;
+
+    // Build income items — one per session if session_ids provided, else one lump sum
+    let incomeItems = [];
+    if (session_ids && session_ids.length > 0) {
+      const sessRes = await db.query(
+        `SELECT s.*, p.first_name, p.last_name FROM sessions s JOIN patients p ON s.patient_id = p.id
+         WHERE s.id = ANY($1::int[])`, [session_ids]
+      );
+      incomeItems = sessRes.rows.map(s => {
+        const dateStr = s.session_date ? new Date(s.session_date).toLocaleDateString('he-IL') : '';
+        return { description: `פגישה${dateStr ? ' ' + dateStr : ''}`, price: s.fee || 450, quantity: 1, vatType: docVatType };
+      });
+    }
+    if (incomeItems.length === 0) {
+      incomeItems = [{ description: desc, price: Number(amount), quantity: 1, vatType: docVatType }];
+    }
+
+    const docRes = await axios.post('https://api.greeninvoice.co.il/api/v1/documents', {
+      type: 320, // חשבון עסקה
+      lang: 'he',
+      currency: 'ILS',
+      vatType: docVatType,
+      client: { id: clientId },
+      description: desc,
+      income: incomeItems,
+      ...(document_date ? { date: toUnix(document_date) } : {}),
+      ...(due_date ? { dueDate: toUnix(due_date) } : {}),
+    }, { headers: { Authorization: `Bearer ${token}` } });
+
+    const doc = docRes.data;
+    const urlObj = doc.url || {};
+    const previewUrl = urlObj.he || urlObj.origin || null;
+    res.json({ doc_id: doc.id, url: previewUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.message || err.message });
+  }
+});
+
 // GET billing records
 // Per-patient billing summary
 router.get('/patient-summary', async (req, res) => {
@@ -318,7 +382,7 @@ router.post('/manual-create', async (req, res) => {
   const {
     patient_id, session_ids, amount, date, description,
     payment_method, payment_status, invoice_action, invoice_number, vat_type,
-    document_date, due_date
+    document_date, due_date, preview_doc_id
   } = req.body;
 
   if (!patient_id || !amount) return res.status(400).json({ error: 'patient_id ו-amount חובה' });
@@ -361,7 +425,14 @@ router.post('/manual-create', async (req, res) => {
     let invoiceDoc = null;
 
     // Handle invoice action
-    if (invoice_action === 'create') {
+    if (preview_doc_id) {
+      // A document was already created via preview — just link it
+      await db.query(
+        'UPDATE billing_records SET green_invoice_doc_id=$1 WHERE id=$2',
+        [preview_doc_id, billing.id]
+      );
+      invoiceDoc = preview_doc_id;
+    } else if (invoice_action === 'create') {
       try {
         const patientName = `${patient.first_name} ${patient.last_name}`;
         const desc = description || `טיפול פסיכולוגי — ${sessionCount || 1} פגישות`;
@@ -375,7 +446,6 @@ router.post('/manual-create', async (req, res) => {
         invoiceDoc = link_id;
       } catch (e) {
         console.error('Invoice creation error:', e.message);
-        // Don't fail the whole request — billing record was saved
         return res.status(201).json({ ...billing, payment_link: null, invoice_error: e.message });
       }
     } else if (invoice_action === 'existing' && invoice_number) {

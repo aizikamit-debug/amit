@@ -46,6 +46,7 @@ export const billingAPI = {
   markPaid: (id) => API.put(`/billing/${id}/paid`),
   morningStatus: (id) => API.get(`/billing/${id}/morning-status`),
   manualCreate: (data) => API.post('/billing/manual-create', data),
+  previewDocument: (data) => API.post('/billing/preview-document', data),
   bulkPending: () => API.get('/billing/bulk-pending'),
   bulkSend: (patient_ids) => API.post('/billing/bulk-send', { patient_ids }),
   checkPayments: () => API.post('/billing/check-payments'),
