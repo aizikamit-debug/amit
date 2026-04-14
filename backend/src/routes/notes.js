@@ -256,53 +256,96 @@ router.post('/split-weekly', async (req, res) => {
     const patientsRes = await db.query(`SELECT id, first_name, last_name FROM patients WHERE status != 'ended'`);
     const patients = patientsRes.rows;
 
-    // Find which first names are shared by multiple patients — only match by full name for those
+    // Get this week's sessions for smart disambiguation
+    const now = new Date();
+    const dow = now.getDay();
+    const sun = new Date(now); sun.setDate(now.getDate() - dow); sun.setHours(0,0,0,0);
+    const sat = new Date(sun); sat.setDate(sun.getDate() + 6); sat.setHours(23,59,59,999);
+    const weekSessionsRes = await db.query(
+      `SELECT DISTINCT s.patient_id FROM sessions s
+       WHERE s.session_date BETWEEN $1 AND $2 AND s.status != 'cancelled'`,
+      [sun.toISOString().split('T')[0], sat.toISOString().split('T')[0]]
+    );
+    const weekPatientIds = new Set(weekSessionsRes.rows.map(r => r.patient_id));
+
+    // Find which first names are shared by multiple patients
     const firstNameCount = {};
     for (const p of patients) {
       const fn = p.first_name.trim();
       firstNameCount[fn] = (firstNameCount[fn] || 0) + 1;
     }
 
-    // Build a sorted list of {patient, index} where patient name appears in text
+    // For duplicate first names, check if exactly one of them has a session this week
+    // If so, we can safely match the first name to that patient
+    const firstNameWeekUnique = {}; // first_name → patient (if exactly 1 with that name has a session this week)
+    const byFirstName = {};
+    for (const p of patients) {
+      const fn = p.first_name.trim();
+      if (!byFirstName[fn]) byFirstName[fn] = [];
+      byFirstName[fn].push(p);
+    }
+    for (const [fn, group] of Object.entries(byFirstName)) {
+      if (group.length > 1) {
+        const weekOnes = group.filter(p => weekPatientIds.has(p.id));
+        if (weekOnes.length === 1) firstNameWeekUnique[fn] = weekOnes[0];
+      }
+    }
+
+    // Build a sorted list of {patient, pos, name} where patient name appears in text
     const mentions = [];
     for (const p of patients) {
       const fn = p.first_name.trim();
       const fullName = `${fn} ${p.last_name.trim()}`;
-      // Always search for full name
       const namesToSearch = [fullName];
-      // Only add first-name-only match if it's unique among all patients
-      if (firstNameCount[fn] === 1) namesToSearch.push(fn);
+
+      if (firstNameCount[fn] === 1) {
+        // Unique first name → safe to match by first name only
+        namesToSearch.push(fn);
+      } else if (firstNameWeekUnique[fn]?.id === p.id) {
+        // Duplicate first name BUT this patient is the only one with a session this week
+        // → safe to match by first name (context: this week's transcription)
+        namesToSearch.push(fn);
+      }
 
       for (const name of namesToSearch) {
         let idx = 0;
         while (true) {
           const pos = transcription.indexOf(name, idx);
           if (pos === -1) break;
-          mentions.push({ patient: p, pos, name });
+          // Avoid double-adding: if a longer name already covers this position, skip
+          const alreadyCovered = mentions.some(m => m.patient.id === p.id && m.pos === pos);
+          if (!alreadyCovered) mentions.push({ patient: p, pos, name });
           idx = pos + name.length;
         }
       }
     }
-    mentions.sort((a, b) => a.pos - b.pos);
 
-    if (mentions.length === 0) {
+    // Remove shorter-name duplicates: if both "דניאל" and "דניאל אסם" found at same pos,
+    // keep only the longer (more specific) match
+    const deduped = mentions.filter((m, i) => {
+      return !mentions.some((other, j) => j !== i && other.pos === m.pos && other.name.length > m.name.length);
+    });
+
+    deduped.sort((a, b) => a.pos - b.pos);
+
+    if (deduped.length === 0) {
       return res.json({ previews: [] });
     }
 
     // Split text into segments
     const segments = [];
-    for (let i = 0; i < mentions.length; i++) {
-      const start = mentions[i].pos;
-      const end = i + 1 < mentions.length ? mentions[i + 1].pos : transcription.length;
+    for (let i = 0; i < deduped.length; i++) {
+      const start = deduped[i].pos;
+      const end = i + 1 < deduped.length ? deduped[i + 1].pos : transcription.length;
       const content = transcription.slice(start, end).trim();
       // De-duplicate: if same patient already added, merge content
-      const existing = segments.find(s => s.patient_id === mentions[i].patient.id);
+      const existing = segments.find(s => s.patient_id === deduped[i].patient.id);
       if (existing) {
         existing.content += '\n\n' + content;
       } else {
         segments.push({
-          patient_name: `${mentions[i].patient.first_name} ${mentions[i].patient.last_name}`,
-          patient_id: mentions[i].patient.id,
+          patient_name: `${deduped[i].patient.first_name} ${deduped[i].patient.last_name}`,
+          patient_id: deduped[i].patient.id,
           matched: true,
           content
         });
