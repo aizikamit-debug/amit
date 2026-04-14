@@ -163,20 +163,20 @@ router.post('/parse-weekly', async (req, res) => {
 
     const prompt = `אתה עוזר לפסיכולוג קליני. יש לך תמלול של פגישות טיפוליות מהשבוע.
 
-פגישות השבוע לפי סדר ביומן:
+פגישות השבוע לפי סדר ביומן (זהו את הסגמנטים לפי הסדר הזה):
 ${weekPatientsContext || 'אין נתונים מהיומן'}
 
 ${otherPatients ? `מטופלים נוספים במערכת:\n${otherPatients}` : ''}
 
-המשימה: זהה כל מטופל שמוזכר בתמלול ופרק אותו לסגמנטים. עבד כל סגמנט לתיעוד קליני קצר ומקצועי בעברית.
+המשימה: פרק את התמלול לסגמנטים לפי מטופל ועבד כל סגמנט לתיעוד קליני קצר ומקצועי בעברית.
 
-כללי זיהוי:
-- השתמש בסדר הפגישות ביומן כרפרנס — אם מוזכר שם שמתאים לפגישה הבאה בסדר, זהו אותה
-- אם שם פרטי לבד מוזכר (כגון "ערן") וברשימת הפגישות יש רק "ערן מליכ" — זהו אותו
-${ambiguousNote ? `- ${ambiguousNote}` : ''}
-- אם אותו שם מוזכר פעמיים — צור שני סגמנטים נפרדים
-- החזר תמיד שם פרטי + שם משפחה מלא מהרשימה
-- אם שם אינו ברשימות — דלג עליו
+כללי זיהוי חשובים:
+- **הסדר קובע**: הסגמנט הראשון בתמלול = פגישה 1 ברשימה, הסגמנט השני = פגישה 2 וכו'
+- **שמות חלקיים**: אם נאמר רק שם פרטי (כגון "ערן"), התאם לפגישה המתאימה הבאה בסדר
+- **שמות דומים בהגייה**: אם שם נשמע דומה לשם ברשימה (כגון "אוסם" ≈ "אסם"), התאם לפגישה הבאה בסדר עם אותו שם פרטי
+${ambiguousNote ? `- **שמות כפולים**: ${ambiguousNote}` : ''}
+- אם אותו שם מוזכר פעמיים — צור שני סגמנטים נפרדים לפי הפגישות ברשימה
+- החזר תמיד שם פרטי + שם משפחה מלא בדיוק כפי שמופיע ברשימה
 
 החזר JSON בלבד:
 [{"patient_name": "שם פרטי שם משפחה", "content": "תיעוד מעובד"}]
@@ -197,17 +197,39 @@ ${transcription}`;
 
     const dayNames2 = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
+    // Levenshtein distance for fuzzy last-name matching (handles "אוסם" ≈ "אסם")
+    const editDist = (a, b) => {
+      const m = a.length, n = b.length;
+      const dp = Array.from({length: m + 1}, (_, i) =>
+        Array.from({length: n + 1}, (_, j) => i === 0 ? j : j === 0 ? i : 0));
+      for (let i = 1; i <= m; i++)
+        for (let j = 1; j <= n; j++)
+          dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+      return dp[m][n];
+    };
+
     // matchPatient: per-name duplicate awareness (not global flag)
     const matchPatient = (segName, candidates) => {
       const normSeg = segName.trim().replace(/\s+/g, ' ');
+      const segParts = normSeg.split(' ');
+      const segFirst = segParts[0];
+      const segLast = segParts.slice(1).join(' ');
+
       // 1. Exact full name
       let match = candidates.find(p => `${p.first_name.trim()} ${p.last_name.trim()}` === normSeg);
       if (match) return match;
       // 2. Segment contains full name
       match = candidates.find(p => normSeg.includes(`${p.first_name.trim()} ${p.last_name.trim()}`));
       if (match) return match;
-      // 3. First name only — allowed if this specific first name is NOT duplicated
-      const segFirst = normSeg.split(' ')[0];
+      // 3. Fuzzy last name: same first name + last name edit distance ≤ 1
+      if (segLast) {
+        match = candidates.find(p =>
+          p.first_name.trim() === segFirst &&
+          editDist(p.last_name.trim(), segLast) <= 1
+        );
+        if (match) return match;
+      }
+      // 4. First name only — allowed if this specific first name is NOT duplicated
       if (!duplicateFirstNames.has(segFirst)) {
         match = candidates.find(p => p.first_name.trim() === segFirst);
         if (match) return match;
