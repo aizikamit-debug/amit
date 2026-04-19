@@ -1,15 +1,25 @@
 const router = require('express').Router();
-const multer = require('multer');
-const xlsx = require('xlsx');
-const pdfParse = require('pdf-parse');
 const axios = require('axios');
 
-// Memory storage — no temp files on disk
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Lazy-load heavy packages to avoid startup crashes
+let multer, xlsxLib, pdfParse;
+try { multer = require('multer'); } catch(e) { console.error('multer not available:', e.message); }
+try { xlsxLib = require('xlsx'); } catch(e) { console.error('xlsx not available:', e.message); }
+try { pdfParse = require('pdf-parse/lib/pdf-parse.js'); } catch(e) {
+  try { pdfParse = require('pdf-parse'); } catch(e2) { console.error('pdf-parse not available:', e2.message); }
+}
+
+function getUpload() {
+  if (!multer) throw new Error('multer לא זמין');
+  return multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+}
 
 // ─── POST /api/import/preview ─────────────────────────────────────────────────
 // Accepts Excel or PDF, returns extracted patient list for preview
-router.post('/preview', upload.single('file'), async (req, res) => {
+router.post('/preview', (req, res, next) => {
+  try { getUpload().single('file')(req, res, next); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+}, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'לא הועלה קובץ' });
 
   const mime = req.file.mimetype;
@@ -20,16 +30,18 @@ router.post('/preview', upload.single('file'), async (req, res) => {
     // ── Extract raw text from file ──────────────────────────────────────────
     if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv') ||
         mime.includes('spreadsheet') || mime.includes('excel') || mime.includes('csv')) {
+      if (!xlsxLib) return res.status(500).json({ error: 'ספריית Excel לא זמינה בשרת' });
       // Excel / CSV
-      const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
+      const wb = xlsxLib.read(req.file.buffer, { type: 'buffer' });
       const lines = [];
       for (const sheetName of wb.SheetNames) {
         const ws = wb.Sheets[sheetName];
-        const csv = xlsx.utils.sheet_to_csv(ws, { blankrows: false });
+        const csv = xlsxLib.utils.sheet_to_csv(ws, { blankrows: false });
         if (csv.trim()) lines.push(`[גיליון: ${sheetName}]\n${csv}`);
       }
       rawText = lines.join('\n\n');
     } else if (name.endsWith('.pdf') || mime === 'application/pdf') {
+      if (!pdfParse) return res.status(500).json({ error: 'ספריית PDF לא זמינה בשרת' });
       // PDF
       const data = await pdfParse(req.file.buffer);
       rawText = data.text;
