@@ -171,12 +171,16 @@ ${otherPatients ? `מטופלים נוספים במערכת:\n${otherPatients}` 
 המשימה: פרק את התמלול לסגמנטים לפי מטופל ועבד כל סגמנט לתיעוד קליני קצר ומקצועי בעברית.
 
 כללי זיהוי חשובים:
-- **הסדר קובע**: הסגמנט הראשון בתמלול = פגישה 1 ברשימה, הסגמנט השני = פגישה 2 וכו'
-- **שמות חלקיים**: אם נאמר רק שם פרטי (כגון "ערן"), התאם לפגישה המתאימה הבאה בסדר
-- **שמות דומים בהגייה**: אם שם נשמע דומה לשם ברשימה (כגון "אוסם" ≈ "אסם"), התאם לפגישה הבאה בסדר עם אותו שם פרטי
+- **הסדר קובע מעל הכל**: הסגמנט ה-1 בתמלול = פגישה 1, הסגמנט ה-2 = פגישה 2 וכו'
+- **שמות חלקיים**: אם נאמר רק שם פרטי (כגון "ערן"), התאם לפגישה הבאה בסדר
+- **שגיאות תמלול נפוצות בעברית**: האות ו' לעיתים נוספת בטעות בתמלול קולי. לכן:
+  - "אוסם" = "אסם" (ו' מיותרת)
+  - "בורקאי" = "ברקאי", "כוהן" = "כהן" וכדומה
+  - תמיד בדוק אם השם (ללא ו') מופיע ברשימה
 ${ambiguousNote ? `- **שמות כפולים**: ${ambiguousNote}` : ''}
+- **שם פרטי כפול**: אם יש מספר מטופלים עם אותו שם פרטי (כגון שני "דניאל"), ספור כמה כבר הופיעו וזהה לפי הסדר — הסגמנט עם "דניאל" הראשון = פגישת דניאל הראשונה, "דניאל" השני = פגישת דניאל השנייה וכו'
 - אם אותו שם מוזכר פעמיים — צור שני סגמנטים נפרדים לפי הפגישות ברשימה
-- החזר תמיד שם פרטי + שם משפחה מלא בדיוק כפי שמופיע ברשימה
+- **חובה**: החזר תמיד שם פרטי + שם משפחה **בדיוק** כפי שמופיע ברשימת הפגישות — לא מה שנשמע בתמלול
 
 החזר JSON בלבד:
 [{"patient_name": "שם פרטי שם משפחה", "content": "תיעוד מעובד"}]
@@ -208,9 +212,12 @@ ${transcription}`;
       return dp[m][n];
     };
 
+    // Strip ו (vav) - common transcription error: "אוסם" heard instead of "אסם"
+    const stripVav = s => s.replace(/ו/g, '');
+
     // matchPatient: per-name duplicate awareness (not global flag)
     const matchPatient = (segName, candidates) => {
-      const normSeg = segName.trim().replace(/\s+/g, ' ');
+      const normSeg = segName.trim().replace(/[\u200e\u200f\u202a-\u202e]/g, '').replace(/\s+/g, ' ');
       const segParts = normSeg.split(' ');
       const segFirst = segParts[0];
       const segLast = segParts.slice(1).join(' ');
@@ -226,6 +233,23 @@ ${transcription}`;
         match = candidates.find(p =>
           p.first_name.trim() === segFirst &&
           editDist(p.last_name.trim(), segLast) <= 1
+        );
+        if (match) return match;
+      }
+      // 3b. Vav-stripped comparison: ו often added/dropped in Hebrew transcription
+      // e.g. "אוסם" (transcribed) = "אסם" (real), "בורקאי" = "ברקאי"
+      if (segLast) {
+        match = candidates.find(p =>
+          p.first_name.trim() === segFirst &&
+          stripVav(p.last_name.trim()) === stripVav(segLast)
+        );
+        if (match) return match;
+      }
+      // 3c. Fuzzy last name edit distance ≤ 2 (catches double-char differences)
+      if (segLast && segLast.length >= 3) {
+        match = candidates.find(p =>
+          p.first_name.trim() === segFirst &&
+          editDist(p.last_name.trim(), segLast) <= 2
         );
         if (match) return match;
       }
@@ -261,7 +285,9 @@ ${transcription}`;
 
       if (weekSession) {
         matchedSessionIds.add(weekSession.session_id);
-        const date = new Date(weekSession.session_date);
+        // Fix timezone: parse date as local (not UTC) to get correct day-of-week
+        const [sy, sm, sd] = weekSession.session_date.toString().slice(0, 10).split('-').map(Number);
+        const date = new Date(sy, sm - 1, sd);
         return {
           ...seg,
           patient_name: `${weekSession.first_name.trim()} ${weekSession.last_name.trim()}`,
@@ -274,9 +300,16 @@ ${transcription}`;
         };
       }
 
-      // 3. Fallback: search all patients
+      // 3. Fallback: search all patients — also correct the name if found
       const patient = matchPatient(normName, allPatients);
-      return { ...seg, patient_id: patient?.id || null, matched: !!patient, session_date: null, day_name: null };
+      return {
+        ...seg,
+        patient_name: patient ? `${patient.first_name.trim()} ${patient.last_name.trim()}` : seg.patient_name,
+        patient_id: patient?.id || null,
+        matched: !!patient,
+        session_date: null,
+        day_name: null
+      };
     });
 
     res.json({ previews, weekRange: { start: weekStartStr, end: weekEndStr } });

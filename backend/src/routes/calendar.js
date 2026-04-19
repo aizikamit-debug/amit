@@ -255,24 +255,61 @@ async function syncCalendar(db) {
 
   const events = resp.data.items || [];
 
-  // ── Delete sessions that no longer exist in Google Calendar ──────────────────
-  // Get all google_event_ids that were imported and fall within the sync window
+  // ── Handle sessions removed from Google Calendar ────────────────────────────
   const activeIds = events.map(e => e.id);
-  const toDelete = await db.query(
-    `SELECT id, google_event_id FROM sessions
+  const toCheck = await db.query(
+    `SELECT id, google_event_id, patient_id, session_date FROM sessions
      WHERE google_event_id IS NOT NULL
+       AND status != 'cancelled'
        AND session_date BETWEEN $1 AND $2`,
     [timeMin.toISOString().split('T')[0], timeMax.toISOString().split('T')[0]]
   );
-  let deleted = 0;
-  for (const row of toDelete.rows) {
-    if (!activeIds.includes(row.google_event_id)) {
-      await db.query('DELETE FROM sessions WHERE id=$1', [row.id]);
-      deleted++;
-      console.log(`  ✗ מחק פגישה שנמחקה מגוגל (session id: ${row.id})`);
+  let cancelled = 0;
+  for (const row of toCheck.rows) {
+    if (activeIds.includes(row.google_event_id)) continue; // still exists in Google
+
+    // Determine week boundaries (Sunday–Friday) of the removed session
+    const sd = new Date(row.session_date.toString().slice(0, 10) + 'T12:00:00');
+    const dow = sd.getDay(); // 0=Sunday
+    const wStart = new Date(sd); wStart.setDate(sd.getDate() - dow);
+    const wEnd   = new Date(wStart); wEnd.setDate(wStart.getDate() + 5); // Friday
+    const wStartStr = wStart.toISOString().slice(0, 10);
+    const wEndStr   = wEnd.toISOString().slice(0, 10);
+
+    // Check if patient has another (non-cancelled) session this week (rescheduled)
+    const rescheduled = await db.query(
+      `SELECT id FROM sessions
+       WHERE patient_id = $1
+         AND id != $2
+         AND session_date BETWEEN $3 AND $4
+         AND status != 'cancelled'`,
+      [row.patient_id, row.id, wStartStr, wEndStr]
+    );
+
+    if (rescheduled.rows.length > 0) {
+      // Patient rescheduled within the same week → delete the old slot
+      // (notes use ON DELETE SET NULL so this is safe)
+      try {
+        await db.query('DELETE FROM sessions WHERE id = $1', [row.id]);
+        console.log(`  ↻ פגישה הוזזה (נמחק slot ישן, session id: ${row.id})`);
+      } catch (delErr) {
+        // Fallback: if delete fails for any reason, just clear the google link
+        await db.query(
+          `UPDATE sessions SET google_event_id = NULL, updated_at = NOW() WHERE id = $1`,
+          [row.id]
+        );
+      }
+    } else {
+      // Not rescheduled this week → mark as cancelled
+      await db.query(
+        `UPDATE sessions SET status = 'cancelled', google_event_id = NULL, updated_at = NOW() WHERE id = $1`,
+        [row.id]
+      );
+      cancelled++;
+      console.log(`  ✗ פגישה בוטלה אוטומטית (session id: ${row.id})`);
     }
   }
-  if (deleted > 0) console.log(`🗑️ הוסרו ${deleted} פגישות שנמחקו מגוגל`);
+  if (cancelled > 0) console.log(`🚫 ${cancelled} פגישות סומנו כבוטלות`);
 
   // Load all patients
   const { rows: patients } = await db.query(
