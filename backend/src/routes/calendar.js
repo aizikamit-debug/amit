@@ -269,12 +269,14 @@ async function syncCalendar(db) {
     if (activeIds.includes(row.google_event_id)) continue; // still exists in Google
 
     // Determine week boundaries (Sunday–Friday) of the removed session
-    const sd = new Date(row.session_date.toString().slice(0, 10) + 'T12:00:00');
+    // session_date can be a Date object (from PostgreSQL) or a string
+    const rawSd = new Date(row.session_date);
+    const sd = new Date(rawSd.getUTCFullYear(), rawSd.getUTCMonth(), rawSd.getUTCDate(), 12, 0, 0);
     const dow = sd.getDay(); // 0=Sunday
     const wStart = new Date(sd); wStart.setDate(sd.getDate() - dow);
     const wEnd   = new Date(wStart); wEnd.setDate(wStart.getDate() + 5); // Friday
-    const wStartStr = wStart.toISOString().slice(0, 10);
-    const wEndStr   = wEnd.toISOString().slice(0, 10);
+    const wStartStr = `${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')}`;
+    const wEndStr   = `${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
     // Check if patient has another (non-cancelled) session this week (rescheduled)
     const rescheduled = await db.query(
