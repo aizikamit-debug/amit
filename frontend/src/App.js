@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { dashboardAPI, patientsAPI, sessionsAPI, notesAPI, questionnairesAPI, billingAPI, settingsAPI, calendarAPI, intakeAPI } from './api';
+import { dashboardAPI, patientsAPI, sessionsAPI, notesAPI, questionnairesAPI, billingAPI, settingsAPI, calendarAPI, intakeAPI, importAPI } from './api';
 import './App.css';
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -1232,6 +1232,15 @@ function PatientsList({ onSelect }) {
     status: 'active', session_fee: 450
   });
 
+  // ── Import state ────────────────────────────────────────────────────────────
+  const [showImport, setShowImport] = useState(false);
+  const [importStep, setImportStep] = useState('upload'); // 'upload' | 'preview' | 'done'
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [importPreview, setImportPreview] = useState([]);
+  const [importSelected, setImportSelected] = useState([]);
+  const [importResult, setImportResult] = useState(null);
+
   const load = useCallback(() => {
     patientsAPI.getAll({ status: statusFilter || undefined, search: search || undefined })
       .then(r => setPatients(r.data)).catch(() => {});
@@ -1247,11 +1256,144 @@ function PatientsList({ onSelect }) {
     } catch (e) { alert('שגיאה בשמירה'); }
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImportError(''); setImportLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await importAPI.preview(file);
+      setImportPreview(r.data.patients);
+      setImportSelected(r.data.patients.map((_, i) => i));
+      setImportStep('preview');
+    } catch (err) {
+      setImportError(err.response?.data?.error || 'שגיאה בעיבוד הקובץ');
+    } finally { setImportLoading(false); }
+  };
+
+  const handleImportConfirm = async () => {
+    setImportLoading(true);
+    try {
+      const toSave = importPreview.filter((_, i) => importSelected.includes(i));
+      const r = await importAPI.confirm(toSave);
+      setImportResult(r.data);
+      setImportStep('done');
+      load();
+    } catch (err) {
+      setImportError(err.response?.data?.error || 'שגיאה בשמירה');
+    } finally { setImportLoading(false); }
+  };
+
+  const resetImport = () => {
+    setShowImport(false); setImportStep('upload');
+    setImportPreview([]); setImportSelected([]);
+    setImportError(''); setImportResult(null);
+  };
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 14 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => { setShowImport(true); setImportStep('upload'); }}>
+          📥 ייבוא מקובץ
+        </button>
         <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>{Icon.plus(14)} מטופל חדש</button>
       </div>
+
+      {/* ── Import Modal ── */}
+      {showImport && (
+        <Modal title="ייבוא מטופלים מקובץ" onClose={resetImport} wide>
+          {importStep === 'upload' && (
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>📂</div>
+              <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>העלה קובץ Excel או PDF</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 24 }}>
+                המערכת תזהה אוטומטית את פרטי המטופלים בכל פורמט
+              </div>
+              <label style={{ cursor: 'pointer' }}>
+                <input type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }} onChange={handleFileUpload} disabled={importLoading}/>
+                <span className="btn btn-primary">
+                  {importLoading ? '⏳ מעבד...' : '📎 בחר קובץ'}
+                </span>
+              </label>
+              {importError && <div style={{ color: '#ef4444', marginTop: 16, fontSize: 13 }}>{importError}</div>}
+              <div style={{ marginTop: 20, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                נתמך: Excel (.xlsx, .xls, .csv) · PDF · עד 10MB
+              </div>
+            </div>
+          )}
+
+          {importStep === 'preview' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                  זוהו {importPreview.length} מטופלים — בחר אילו לייבא:
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setImportSelected(importPreview.map((_, i) => i))}>בחר הכל</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setImportSelected([])}>נקה הכל</button>
+                </div>
+              </div>
+              <div style={{ maxHeight: 380, overflowY: 'auto', marginBottom: 16 }}>
+                {importPreview.map((p, i) => (
+                  <div key={i} onClick={() => setImportSelected(sel => sel.includes(i) ? sel.filter(s => s !== i) : [...sel, i])}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 8,
+                      background: importSelected.includes(i) ? 'rgba(99,102,241,0.07)' : 'transparent',
+                      border: `1px solid ${importSelected.includes(i) ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
+                      marginBottom: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={importSelected.includes(i)} onChange={() => {}} style={{ marginTop: 3 }}/>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 500, fontSize: 14 }}>{p.first_name} {p.last_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        {p.phone && <span>📱 {p.phone}</span>}
+                        {p.email && <span>✉️ {p.email}</span>}
+                        {p.date_of_birth && <span>🎂 {p.date_of_birth}</span>}
+                        {p.id_number && <span>🪪 {p.id_number}</span>}
+                        {p.session_fee && <span>💰 ₪{p.session_fee}</span>}
+                      </div>
+                      {p.notes && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>{p.notes.slice(0, 120)}{p.notes.length > 120 ? '...' : ''}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {importError && <div style={{ color: '#ef4444', marginBottom: 12, fontSize: 13 }}>{importError}</div>}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary" onClick={() => setImportStep('upload')}>חזור</button>
+                <button className="btn btn-primary" onClick={handleImportConfirm} disabled={!importSelected.length || importLoading}>
+                  {importLoading ? '⏳ שומר...' : `ייבא ${importSelected.length} מטופלים`}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {importStep === 'done' && importResult && (
+            <div style={{ textAlign: 'center', padding: '24px 0' }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+              <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 16 }}>הייבוא הושלם</div>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 24 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981' }}>{importResult.saved}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>נשמרו</div>
+                </div>
+                {importResult.skipped > 0 && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{importResult.skipped}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>דולגו (כבר קיימים)</div>
+                  </div>
+                )}
+                {importResult.errors > 0 && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{importResult.errors}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>שגיאות</div>
+                  </div>
+                )}
+              </div>
+              <button className="btn btn-primary" onClick={resetImport}>סגור</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
 
       <div className="card card-sm" style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 10 }}>

@@ -75,6 +75,7 @@ app.use('/api/calendar', require('./routes/calendar'));
 app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/intake', require('./routes/intake'));
 app.use('/api/export', require('./routes/export'));
+app.use('/api/import', require('./routes/import'));
 app.use('/api/summary', require('./routes/summary'));
 const { router: backupRouter, runBackup } = require('./routes/backup');
 app.use('/api/backup', backupRouter);

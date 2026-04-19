@@ -73,6 +73,15 @@ export const intakeAPI = {
   editAI: (content, instructions) => API.post('/intake/edit-ai', { content, instructions }),
 };
 
+export const importAPI = {
+  preview: (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return API.post('/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  confirm: (patients) => API.post('/import/confirm', { patients }),
+};
+
 export const calendarAPI = {
   status: () => API.get('/calendar/status'),
   calendars: () => API.get('/calendar/calendars'),
