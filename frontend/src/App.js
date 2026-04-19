@@ -1234,6 +1234,7 @@ function PatientsList({ onSelect }) {
 
   // ── Import state ────────────────────────────────────────────────────────────
   const [showImport, setShowImport] = useState(false);
+  const [importMode, setImportMode] = useState('patients'); // 'patients' | 'notes'
   const [importStep, setImportStep] = useState('upload'); // 'upload' | 'preview' | 'done'
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState('');
@@ -1261,11 +1262,9 @@ function PatientsList({ onSelect }) {
     if (!file) return;
     setImportError(''); setImportLoading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const r = await importAPI.preview(file);
-      setImportPreview(r.data.patients);
-      setImportSelected(r.data.patients.map((_, i) => i));
+      const r = await importAPI.preview(file, importMode);
+      setImportPreview(r.data.items);
+      setImportSelected(r.data.items.map((_, i) => i));
       setImportStep('preview');
     } catch (err) {
       setImportError(err.response?.data?.error || 'שגיאה בעיבוד הקובץ');
@@ -1276,7 +1275,7 @@ function PatientsList({ onSelect }) {
     setImportLoading(true);
     try {
       const toSave = importPreview.filter((_, i) => importSelected.includes(i));
-      const r = await importAPI.confirm(toSave);
+      const r = await importAPI.confirm(toSave, importMode);
       setImportResult(r.data);
       setImportStep('done');
       load();
@@ -1286,7 +1285,7 @@ function PatientsList({ onSelect }) {
   };
 
   const resetImport = () => {
-    setShowImport(false); setImportStep('upload');
+    setShowImport(false); setImportStep('upload'); setImportMode('patients');
     setImportPreview([]); setImportSelected([]);
     setImportError(''); setImportResult(null);
   };
@@ -1304,21 +1303,35 @@ function PatientsList({ onSelect }) {
       {showImport && (
         <Modal title="ייבוא מטופלים מקובץ" onClose={resetImport} wide>
           {importStep === 'upload' && (
-            <div style={{ textAlign: 'center', padding: '24px 0' }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>📂</div>
-              <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>העלה קובץ Excel או PDF</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 24 }}>
-                המערכת תזהה אוטומטית את פרטי המטופלים בכל פורמט
+            <div style={{ padding: '8px 0 24px' }}>
+              {/* Mode selector */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
+                {[['patients','👤 פרטי מטופלים'],['notes','📋 סיכומי פגישות']].map(([m, label]) => (
+                  <button key={m} onClick={() => setImportMode(m)}
+                    style={{ flex: 1, padding: '12px', borderRadius: 10, border: `2px solid ${importMode===m ? 'var(--primary)' : 'var(--border)'}`,
+                      background: importMode===m ? 'rgba(99,102,241,0.08)' : 'transparent',
+                      color: importMode===m ? 'var(--primary)' : 'var(--text)', fontWeight: importMode===m ? 600 : 400,
+                      cursor: 'pointer', fontSize: 13.5 }}>
+                    {label}
+                  </button>
+                ))}
               </div>
-              <label style={{ cursor: 'pointer' }}>
-                <input type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }} onChange={handleFileUpload} disabled={importLoading}/>
-                <span className="btn btn-primary">
-                  {importLoading ? '⏳ מעבד...' : '📎 בחר קובץ'}
-                </span>
-              </label>
-              {importError && <div style={{ color: '#ef4444', marginTop: 16, fontSize: 13 }}>{importError}</div>}
-              <div style={{ marginTop: 20, fontSize: 11.5, color: 'var(--text-muted)' }}>
-                נתמך: Excel (.xlsx, .xls, .csv) · PDF · עד 10MB
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>📂</div>
+                <div style={{ fontSize: 14.5, fontWeight: 500, marginBottom: 6 }}>
+                  {importMode === 'patients' ? 'ייבוא פרטי מטופלים' : 'ייבוא סיכומי פגישות'}
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 20 }}>
+                  {importMode === 'patients'
+                    ? 'Claude יזהה אוטומטית שם, טלפון, ת.לידה, ת.ז, כתובת ועוד'
+                    : 'Claude יזהה את המטופל, תאריך הפגישה ותוכן הסיכום'}
+                </div>
+                <label style={{ cursor: 'pointer' }}>
+                  <input type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }} onChange={handleFileUpload} disabled={importLoading}/>
+                  <span className="btn btn-primary">{importLoading ? '⏳ מעבד...' : '📎 בחר קובץ'}</span>
+                </label>
+                {importError && <div style={{ color: '#ef4444', marginTop: 14, fontSize: 13 }}>{importError}</div>}
+                <div style={{ marginTop: 16, fontSize: 11.5, color: 'var(--text-muted)' }}>Excel · CSV · PDF · עד 15MB</div>
               </div>
             </div>
           )}
@@ -1327,7 +1340,7 @@ function PatientsList({ onSelect }) {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 500 }}>
-                  זוהו {importPreview.length} מטופלים — בחר אילו לייבא:
+                  זוהו {importPreview.length} {importMode === 'notes' ? 'פגישות' : 'מטופלים'} — בחר אילו לייבא:
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-secondary btn-sm" onClick={() => setImportSelected(importPreview.map((_, i) => i))}>בחר הכל</button>
@@ -1335,7 +1348,7 @@ function PatientsList({ onSelect }) {
                 </div>
               </div>
               <div style={{ maxHeight: 380, overflowY: 'auto', marginBottom: 16 }}>
-                {importPreview.map((p, i) => (
+                {importPreview.map((item, i) => (
                   <div key={i} onClick={() => setImportSelected(sel => sel.includes(i) ? sel.filter(s => s !== i) : [...sel, i])}
                     style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px', borderRadius: 8,
                       background: importSelected.includes(i) ? 'rgba(99,102,241,0.07)' : 'transparent',
@@ -1343,15 +1356,29 @@ function PatientsList({ onSelect }) {
                       marginBottom: 8, cursor: 'pointer' }}>
                     <input type="checkbox" checked={importSelected.includes(i)} onChange={() => {}} style={{ marginTop: 3 }}/>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500, fontSize: 14 }}>{p.first_name} {p.last_name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                        {p.phone && <span>📱 {p.phone}</span>}
-                        {p.email && <span>✉️ {p.email}</span>}
-                        {p.date_of_birth && <span>🎂 {p.date_of_birth}</span>}
-                        {p.id_number && <span>🪪 {p.id_number}</span>}
-                        {p.session_fee && <span>💰 ₪{p.session_fee}</span>}
-                      </div>
-                      {p.notes && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>{p.notes.slice(0, 120)}{p.notes.length > 120 ? '...' : ''}</div>}
+                      {importMode === 'notes' ? (
+                        <>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                            <span style={{ fontWeight: 500, fontSize: 14 }}>{item.patient_name}</span>
+                            {item.session_date && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>📅 {item.session_date}</span>}
+                            {!item.matched && <span style={{ fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '1px 6px', borderRadius: 4 }}>לא זוהה במערכת</span>}
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, fontStyle: 'italic' }}>
+                            {item.content?.slice(0, 150)}{item.content?.length > 150 ? '...' : ''}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 500, fontSize: 14 }}>{item.first_name} {item.last_name}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                            {item.phone && <span>📱 {item.phone}</span>}
+                            {item.email && <span>✉️ {item.email}</span>}
+                            {item.date_of_birth && <span>🎂 {item.date_of_birth}</span>}
+                            {item.session_fee && <span>💰 ₪{item.session_fee}</span>}
+                          </div>
+                          {item.notes && <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 3, fontStyle: 'italic' }}>{item.notes.slice(0, 100)}...</div>}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1360,7 +1387,7 @@ function PatientsList({ onSelect }) {
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary" onClick={() => setImportStep('upload')}>חזור</button>
                 <button className="btn btn-primary" onClick={handleImportConfirm} disabled={!importSelected.length || importLoading}>
-                  {importLoading ? '⏳ שומר...' : `ייבא ${importSelected.length} מטופלים`}
+                  {importLoading ? '⏳ שומר...' : `ייבא ${importSelected.length} ${importMode === 'notes' ? 'פגישות' : 'מטופלים'}`}
                 </button>
               </div>
             </div>
@@ -1375,18 +1402,14 @@ function PatientsList({ onSelect }) {
                   <div style={{ fontSize: 28, fontWeight: 700, color: '#10b981' }}>{importResult.saved}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>נשמרו</div>
                 </div>
-                {importResult.skipped > 0 && (
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{importResult.skipped}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>דולגו (כבר קיימים)</div>
-                  </div>
-                )}
-                {importResult.errors > 0 && (
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{importResult.errors}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>שגיאות</div>
-                  </div>
-                )}
+                {importResult.skipped > 0 && <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{importResult.skipped}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>דולגו</div>
+                </div>}
+                {importResult.errors > 0 && <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{importResult.errors}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>שגיאות</div>
+                </div>}
               </div>
               <button className="btn btn-primary" onClick={resetImport}>סגור</button>
             </div>

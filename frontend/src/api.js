@@ -74,12 +74,13 @@ export const intakeAPI = {
 };
 
 export const importAPI = {
-  preview: (file) => {
+  preview: (file, mode = 'patients') => {
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('mode', mode);
     return API.post('/import/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
-  confirm: (patients) => API.post('/import/confirm', { patients }),
+  confirm: (items, mode = 'patients') => API.post('/import/confirm', { items, mode }),
 };
 
 export const calendarAPI = {
