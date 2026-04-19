@@ -916,6 +916,15 @@ function Dashboard({ month: initMonth, year: initYear, onPatientClick }) {
   useEffect(() => { loadWeek(); }, [loadWeek]);
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
+  // Auto-refresh every 2 minutes — picks up changes synced from Google Calendar
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadWeek();
+      loadSummary();
+    }, 2 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadWeek, loadSummary]);
+
   const handleSync = async () => {
     setSyncing(true); setSyncMsg('');
     try {
